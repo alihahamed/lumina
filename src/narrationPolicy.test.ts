@@ -7,7 +7,8 @@ import {
   PULSE_SLOWEST_MS,
   nearestInPath,
   proximityOf,
-  pulseIntervalFor,
+  intervalFor,
+  patternFor,
   FORGET_MS,
   GLOBAL_MIN_GAP_MS,
   MAX_DELAY_MS,
@@ -141,14 +142,48 @@ assert.ok(nearButSmall > farButBig, 'base position beats area as a distance cue'
 assert.equal(proximityOf(box(0, 100, 0, 500), 0), 0, 'degenerate frame height is safe')
 
 // --- pulse pacing ------------------------------------------------------------
-assert.equal(pulseIntervalFor(0), null, 'nothing far away buzzes')
-assert.equal(pulseIntervalFor(PULSE_MIN_PROXIMITY - 0.01), null, 'below threshold stays silent')
-assert.equal(pulseIntervalFor(PULSE_MIN_PROXIMITY), PULSE_SLOWEST_MS, 'at threshold, slowest')
-assert.equal(pulseIntervalFor(1), PULSE_FASTEST_MS, 'at your feet, fastest')
-assert.ok(
-  pulseIntervalFor(0.9)! < pulseIntervalFor(0.7)!,
-  'closer pulses faster — a rising rate needs no explaining',
-)
+assert.equal(patternFor(0), 'none', 'nothing far away buzzes')
+assert.equal(patternFor(PULSE_MIN_PROXIMITY - 0.01), 'none', 'below threshold stays silent')
+assert.equal(patternFor(PULSE_MIN_PROXIMITY), 'far', 'at threshold, the gentlest pattern')
+assert.equal(patternFor(0.8), 'near', 'closer escalates')
+assert.equal(patternFor(1), 'imminent', 'at your feet, the strongest')
+assert.equal(intervalFor('none'), null, 'silence has no interval')
+assert.equal(intervalFor('far'), PULSE_SLOWEST_MS)
+assert.equal(intervalFor('imminent'), PULSE_FASTEST_MS)
+assert.ok(intervalFor('imminent')! < intervalFor('far')!, 'closer repeats faster too')
+
+// --- zone hysteresis: the "voice keeps repeating" bug ------------------------
+// A box sitting right on the one-third line must not flip zone frame to frame.
+const onTheLine = box(295, 305) // centre 300, exactly the left/ahead boundary
+assert.equal(zoneOf(onTheLine, W), 'ahead', 'with no history it picks a side')
+// Once called 'on your left', small jitter must not move it to 'ahead'.
+assert.equal(zoneOf(box(290, 300), W, 'on your left'), 'on your left', 'stays put under jitter')
+assert.equal(zoneOf(box(299, 311), W, 'on your left'), 'on your left', 'and just past the line')
+// A decisive move does change it.
+assert.equal(zoneOf(box(500, 560), W, 'on your left'), 'ahead', 'a real move is honoured')
+// Symmetrically on the right boundary.
+assert.equal(zoneOf(box(595, 605), W, 'ahead'), 'ahead', 'ahead is sticky too')
+assert.equal(zoneOf(box(800, 880), W, 'ahead'), 'on your right', 'until it clearly leaves')
+
+// The same object jittering across the line announces ONCE, not once per flip.
+const jitter: Tracks = new Map()
+const memory = new Map<string, 'on your left' | 'ahead' | 'on your right'>()
+let jitterSpokeAt = -Infinity
+let jitterCount = 0
+for (let i = 0; i < 40; i++) {
+  const wobble = i % 2 === 0 ? box(292, 302) : box(298, 308) // straddles x=300
+  const said = selectAnnouncement(
+    toCandidates([{ label: 'chair', bbox: wobble }], W, H, memory),
+    i * 250,
+    jitter,
+    jitterSpokeAt,
+  )
+  if (said) {
+    jitterCount++
+    jitterSpokeAt = i * 250
+  }
+}
+assert.ok(jitterCount <= 4, `a box jittering on a zone line spoke ${jitterCount} times, expected <= 4`)
 
 // --- only what is in your path -----------------------------------------------
 const scene = toCandidates(

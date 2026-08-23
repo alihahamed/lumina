@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { models, useObjectDetection } from 'react-native-executorch'
 import type { Frame } from 'react-native-vision-camera'
 import { Camera, useCameraPermission, useFrameOutput } from 'react-native-vision-camera'
 import { scheduleOnRN } from 'react-native-worklets'
 import { pulseFor, resetHaptics } from './src/haptics'
-import { nearestInPath, toCandidates, type Detected } from './src/narrationPolicy'
+import {
+  nearestInPath,
+  toCandidates,
+  type Detected,
+  type PulsePattern,
+  type ZoneMemory,
+} from './src/narrationPolicy'
 import { alert, narrate, resetNarrator } from './src/narrator'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
@@ -21,6 +27,10 @@ export default function App() {
   const [labels, setLabels] = useState<string[]>([])
   const [dropped, setDropped] = useState(0)
   const [proximity, setProximity] = useState(0)
+  const [pattern, setPattern] = useState<PulsePattern>('none')
+  // Which zone we last called each label, so boxes jittering on a zone boundary
+  // do not flip back and forth and get announced twice.
+  const zoneMemory = useRef<ZoneMemory>(new Map())
 
   const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
   const { runOnFrame, isReady, downloadProgress, error } = detection
@@ -39,14 +49,14 @@ export default function App() {
 
   const publish = useCallback((found: Detected[], frameWidth: number, frameHeight: number) => {
     // Ranking, cooldowns and proximity live in narrationPolicy — see docs/decisions.md.
-    const candidates = toCandidates(found, frameWidth, frameHeight)
+    const candidates = toCandidates(found, frameWidth, frameHeight, zoneMemory.current)
     setLabels(candidates.map((c) => c.text))
 
     // Haptics first, and unconditionally: this is the safety layer and must not wait
     // on speech, on a name for the obstacle, or on anything off-device.
     const path = nearestInPath(candidates)
     setProximity(path?.proximity ?? 0)
-    if (path != null) pulseFor(path.proximity)
+    setPattern(path != null ? pulseFor(path.proximity) : 'none')
 
     narrate(candidates)
   }, [])
@@ -128,7 +138,9 @@ export default function App() {
           {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
         </Text>
         <Text style={styles.detail}>dropped frames: {dropped}</Text>
-        <Text style={styles.detail}>path proximity: {proximity.toFixed(2)}</Text>
+        <Text style={styles.detail}>
+          path proximity: {proximity.toFixed(2)} · haptic: {pattern}
+        </Text>
         {labels.length === 0 ? (
           <Text style={styles.detail}>nothing detected</Text>
         ) : (

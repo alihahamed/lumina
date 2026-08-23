@@ -2,6 +2,94 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
+## 2026-08-23 — Same object announced repeatedly as it enters and leaves frame
+
+**Status:** fixed
+**Files:** `src/narrationPolicy.ts`, `App.tsx`
+
+### Symptom
+
+Reported from device use: the voice repeats the same object over and over while
+walking, even though the backoff was supposed to stop that.
+
+### Root cause
+
+Two separate causes, both defeating the backoff by making the same object look like a
+*different* object:
+
+1. **Zone boundary flicker.** The announcement key is `label + zone`, and zones split
+   the frame in exact thirds. A box sitting near the one-third line jitters a few
+   pixels frame to frame, so it flipped between `chair|ahead` and
+   `chair|on your left`. Two keys, two fresh cooldowns, announced on every flip.
+
+2. **`FORGET_MS` was 8s.** Sweeping the camera past something and back takes a couple
+   of seconds, but any object out of view for 8s was deleted and treated as brand new
+   on return. Walking down a corridor re-announced everything constantly.
+
+The backoff itself worked correctly. Both bugs bypassed it.
+
+### Fix
+
+**Hysteresis on zone boundaries.** `zoneOf` now takes the previous zone and shifts the
+boundaries to favour it by `ZONE_MARGIN` (6% of frame width). A box must move
+decisively before we call it a change. `App.tsx` holds the per-label memory in a ref.
+
+**`FORGET_MS` 8s → 20s.** Long enough that a sweep and return is the *same* object.
+
+### How we know it's fixed
+
+A test simulates a box straddling the zone line for 40 frames and asserts it speaks
+at most 4 times; before the fix it spoke on nearly every flip.
+
+### Anything still open
+
+The `ZONE_MARGIN` of 6% and the 20s memory are guesses, like every other constant in
+this file. Confirm while walking a corridor.
+
+---
+
+## 2026-08-23 — Haptic patterns not distinguishable
+
+**Status:** fixed (design change, unverified on device)
+**Files:** `src/haptics.ts`, `src/narrationPolicy.ts`
+
+### Symptom
+
+Reported from device use: the buzzing conveyed nothing — no sense of how close
+anything was.
+
+### Root cause
+
+The pulse rate slid continuously with distance (1200ms → 250ms) and strength rose with
+it. **Nobody can tell 900ms from 700ms while walking.** A continuously varying rate is
+not learnable, so every buzz felt the same and carried one bit of information: something
+is there.
+
+### Fix
+
+Three discrete patterns that feel obviously different:
+
+| Pattern | Feels like | Meaning |
+|---|---|---|
+| `far` | one light tap, slow | something coming up |
+| `near` | **two** medium taps | close, pay attention |
+| `imminent` | fast heavy thuds | stop |
+
+The double-tap is the important one — a *count* is recognisable where a small change in
+rate is not. Escalation to a more severe pattern also bypasses the interval, so getting
+suddenly closer is felt immediately rather than after the gentler pattern's gap.
+
+The debug overlay now shows which pattern is firing, so it can be checked against
+what the hand feels.
+
+### Anything still open
+
+Unverified by a human. And the input is still the proximity *heuristic* — the patterns
+can only be as good as the distance estimate feeding them, which is the whole reason
+for the ARCore depth spike.
+
+---
+
 ## 2026-08-23 — `getNativeBuffer()`: "HardwareBuffers require minSdk 26 or higher!"
 
 **Status:** fixed

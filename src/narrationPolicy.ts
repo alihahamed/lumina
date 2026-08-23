@@ -47,8 +47,23 @@ export const MAX_DELAY_MS = 12000
 /** Nothing is ever spoken more often than this, however much is in frame. */
 export const GLOBAL_MIN_GAP_MS = 2500
 
-/** Out of sight this long and an object counts as new again. */
-export const FORGET_MS = 8000
+/**
+ * Out of sight this long and an object counts as new again.
+ *
+ * Deliberately long. Sweeping the camera past something and back takes a couple of
+ * seconds, and at 8s this re-announced everything on every sweep.
+ */
+export const FORGET_MS = 20000
+
+/**
+ * How far past a zone boundary a box must travel before we call it a zone change,
+ * as a fraction of frame width.
+ *
+ * Without this, a box sitting near the one-third line jitters between 'ahead' and
+ * 'on your left' frame to frame. Those are different keys, so each flip counted as
+ * news and the app announced the same object over and over.
+ */
+export const ZONE_MARGIN = 0.06
 
 export interface Track {
   lastSpoken: number
@@ -76,12 +91,28 @@ export type Tracks = Map<string, Track>
  * originalSize/inputSize), so `frameWidth` must be the frame's width, not the
  * model's input size.
  */
-export function zoneOf(box: Box, frameWidth: number): Zone {
+export function zoneOf(box: Box, frameWidth: number, previous?: Zone): Zone {
   const centreX = (box.x1 + box.x2) / 2
-  if (centreX < frameWidth / 3) return 'on your left'
-  if (centreX > (frameWidth * 2) / 3) return 'on your right'
+  const margin = previous == null ? 0 : frameWidth * ZONE_MARGIN
+
+  // Boundaries move to favour whichever zone we already called it, so a jittering
+  // box has to move decisively before we treat it as having crossed.
+  let leftEdge = frameWidth / 3
+  let rightEdge = (frameWidth * 2) / 3
+  if (previous === 'on your left') leftEdge += margin
+  else if (previous === 'on your right') rightEdge -= margin
+  else if (previous === 'ahead') {
+    leftEdge -= margin
+    rightEdge += margin
+  }
+
+  if (centreX < leftEdge) return 'on your left'
+  if (centreX > rightEdge) return 'on your right'
   return 'ahead'
 }
+
+/** Last zone we assigned each label, so {@link zoneOf} can apply hysteresis. */
+export type ZoneMemory = Map<string, Zone>
 
 /**
  * How close something is, from where its base sits in the frame.
@@ -102,13 +133,33 @@ export function proximityOf(box: Box, frameHeight: number): number {
 }
 
 /**
- * Gap between haptic pulses for a given proximity, or null to stay silent.
- * Closer means faster: a rising pulse rate is understood without being taught.
+ * Three distinct buzz patterns, rather than a rate that slides smoothly with distance.
+ *
+ * A continuously varying rate is not learnable — you cannot tell 900ms from 700ms
+ * while walking. Three patterns that feel obviously different can be learned in a
+ * minute and then recognised without thinking.
  */
-export function pulseIntervalFor(proximity: number): number | null {
-  if (proximity < PULSE_MIN_PROXIMITY) return null
-  const urgency = (proximity - PULSE_MIN_PROXIMITY) / (1 - PULSE_MIN_PROXIMITY)
-  return Math.round(PULSE_SLOWEST_MS - urgency * (PULSE_SLOWEST_MS - PULSE_FASTEST_MS))
+export type PulsePattern = 'none' | 'far' | 'near' | 'imminent'
+
+export function patternFor(proximity: number): PulsePattern {
+  if (proximity < PULSE_MIN_PROXIMITY) return 'none'
+  if (proximity < 0.7) return 'far'
+  if (proximity < 0.85) return 'near'
+  return 'imminent'
+}
+
+/** Gap between repeats of a pattern, in ms. */
+export function intervalFor(pattern: PulsePattern): number | null {
+  switch (pattern) {
+    case 'none':
+      return null
+    case 'far':
+      return PULSE_SLOWEST_MS
+    case 'near':
+      return 700
+    case 'imminent':
+      return PULSE_FASTEST_MS
+  }
 }
 
 /**
@@ -137,10 +188,12 @@ export function toCandidates(
   detections: Detected[],
   frameWidth: number,
   frameHeight: number,
+  zoneMemory?: ZoneMemory,
 ): Candidate[] {
   return detections.map((d) => {
     const label = d.label.toLowerCase().replace(/_/g, ' ')
-    const zone = zoneOf(d.bbox, frameWidth)
+    const zone = zoneOf(d.bbox, frameWidth, zoneMemory?.get(label))
+    zoneMemory?.set(label, zone)
     const area = Math.max(0, d.bbox.x2 - d.bbox.x1) * Math.max(0, d.bbox.y2 - d.bbox.y1)
     const centreX = (d.bbox.x1 + d.bbox.x2) / 2
     const offCentre = Math.min(1, Math.abs(centreX - frameWidth / 2) / (frameWidth / 2))
