@@ -65,6 +65,12 @@ function SpikeScene() {
 type Mode = 'arcore' | 'camera'
 
 export default function DepthSpike({ onExit }: { onExit: () => void }) {
+  // The no-swap path: ARCore keeps the camera, we grab a still and run YOLO on it.
+  const navRef = useRef<any>(null)
+  const [shot, setShot] = useState<{ capture: number; detect: number; found: number } | null>(
+    null,
+  )
+  const [shotError, setShotError] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('arcore')
   const [reading, setReading] = useState<Reading | null>(null)
   const [detections, setDetections] = useState(0)
@@ -73,14 +79,18 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
     camera: null,
   })
 
-  // Stamped the moment the user taps switch; cleared by whichever mode reports ready.
-  const swapStartedAt = useRef<number | null>(null)
+  // Stamped the moment the user taps switch, together with the mode being swapped TO.
+  // The target matters: a hit-test promise issued before the swap can resolve after it,
+  // and without this check that stale result was credited as an ARCore startup time.
+  const swapPending = useRef<{ at: number; target: Mode } | null>(null)
 
   const markReady = useCallback((which: Mode) => {
-    const started = swapStartedAt.current
-    if (started == null) return
-    swapStartedAt.current = null
-    setSwapMs((prev) => ({ ...prev, [which]: Date.now() - started }))
+    const pending = swapPending.current
+    if (pending == null) return
+    // Ignore anything reporting ready for the mode we just left.
+    if (pending.target !== which) return
+    swapPending.current = null
+    setSwapMs((prev) => ({ ...prev, [which]: Date.now() - pending.at }))
   }, [])
 
   const onReading = useCallback(
@@ -129,15 +139,48 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
 
   const frameOutput = useFrameOutput({ pixelFormat: 'rgb', onFrame })
 
+  /**
+   * Screenshot → YOLO, without ever releasing the camera.
+   *
+   * If this is fast enough it replaces the whole two-mode swap: ARCore holds the
+   * camera permanently and on-demand naming runs off a still.
+   */
+  const captureAndDetect = useCallback(async () => {
+    setShotError(null)
+    try {
+      const t0 = Date.now()
+      const result = await navRef.current?._takeScreenshot(`spike-${t0}`, false)
+      const capture = Date.now() - t0
+
+      const path: string | undefined =
+        result?.url ?? result?.filePath ?? result?.path ?? result
+      if (typeof path !== 'string') {
+        setShotError(`screenshot returned ${JSON.stringify(result)?.slice(0, 80)}`)
+        return
+      }
+
+      const t1 = Date.now()
+      const uri = path.startsWith('file://') ? path : `file://${path}`
+      const found = await detection.forward(uri, { detectionThreshold: 0.5, inputSize: 384 })
+      setShot({ capture, detect: Date.now() - t1, found: found.length })
+    } catch (e) {
+      setShotError(String(e).slice(0, 140))
+    }
+  }, [detection])
+
   const swap = () => {
-    swapStartedAt.current = Date.now()
-    setMode((m) => (m === 'arcore' ? 'camera' : 'arcore'))
+    setMode((m) => {
+      const target: Mode = m === 'arcore' ? 'camera' : 'arcore'
+      swapPending.current = { at: Date.now(), target }
+      return target
+    })
   }
 
   return (
     <View style={styles.root}>
       {mode === 'arcore' ? (
         <ViroARSceneNavigator
+          ref={navRef}
           autofocus
           depthEnabled
           initialScene={{ scene: SpikeScene }}
@@ -179,8 +222,25 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
           swap → camera: {swapMs.camera != null ? `${swapMs.camera} ms` : '—'}
         </Text>
         <Text style={styles.note}>
-          Under ~500 ms and the two-mode design works. Seconds and it does not.
+          Swap cost measured at ~1.2s each way — too slow. The capture path below is
+          the alternative: ARCore never lets go of the camera.
         </Text>
+
+        {mode === 'arcore' ? (
+          <>
+            <Text style={styles.detail}>
+              {shot != null
+                ? `capture ${shot.capture} ms + detect ${shot.detect} ms = ${
+                    shot.capture + shot.detect
+                  } ms · ${shot.found} objects`
+                : 'capture → detect: not run'}
+            </Text>
+            {shotError != null ? <Text style={styles.error}>{shotError}</Text> : null}
+            <Pressable style={styles.button} onPress={() => void captureAndDetect()}>
+              <Text style={styles.buttonText}>Capture &amp; detect (no swap)</Text>
+            </Pressable>
+          </>
+        ) : null}
 
         <Pressable style={styles.button} onPress={swap}>
           <Text style={styles.buttonText}>Swap camera owner</Text>
@@ -226,5 +286,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#2B6CB0',
   },
   exit: { backgroundColor: '#3A3A44' },
+  error: { color: '#E88', fontSize: 11, marginTop: 4 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
 })
