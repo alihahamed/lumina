@@ -4,7 +4,8 @@ import { models, useObjectDetection } from 'react-native-executorch'
 import type { Frame } from 'react-native-vision-camera'
 import { Camera, useCameraPermission, useFrameOutput } from 'react-native-vision-camera'
 import { scheduleOnRN } from 'react-native-worklets'
-import { announce, resetNarrator } from './src/narrator'
+import { toCandidates, type Detected } from './src/narrationPolicy'
+import { alert, narrate, resetNarrator } from './src/narrator'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
 // 100-300 ms a frame. Capping the whole pipeline is cheaper than throttling
@@ -27,15 +28,15 @@ export default function App() {
   }, [hasPermission, requestPermission])
 
   useEffect(() => {
-    if (isReady) announce('ready', 'Lumina ready', 'alert')
+    if (isReady) alert('Lumina ready')
     return resetNarrator
   }, [isReady])
 
-  const publish = useCallback((found: string[]) => {
-    setLabels(found)
-    for (const label of found) {
-      announce(label, `${label.toLowerCase().replace(/_/g, ' ')} ahead`)
-    }
+  const publish = useCallback((found: Detected[], frameWidth: number) => {
+    // Ranking and cooldowns live in narrationPolicy — see docs/decisions.md.
+    const candidates = toCandidates(found, frameWidth)
+    setLabels(candidates.map((c) => c.text))
+    narrate(candidates)
   }, [])
 
   const onFrame = useCallback(
@@ -52,7 +53,16 @@ export default function App() {
           detectionThreshold: MIN_SCORE,
           inputSize: INPUT_SIZE,
         })
-        scheduleOnRN(publish, found.map((d) => String(d.label)))
+        // Rebuild as plain objects — native host objects do not survive the hop to JS.
+        // bbox is in frame pixels, so frame.width is what the zones divide up.
+        scheduleOnRN(
+          publish,
+          found.map((d) => ({
+            label: String(d.label),
+            bbox: { x1: d.bbox.x1, y1: d.bbox.y1, x2: d.bbox.x2, y2: d.bbox.y2 },
+          })),
+          frame.width,
+        )
       } finally {
         // Not disposing stalls the camera pipeline.
         frame.dispose()

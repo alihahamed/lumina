@@ -7,6 +7,46 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-08-23 — Narration announces changes, not state
+
+**Chose:** rank all detections, speak at most one per frame, key cooldowns on
+`label + zone`, back off while an object persists, and enforce a global gap.
+
+**Rejected:** a flat per-label cooldown (what we shipped first), and narrating every
+detection.
+
+**Why:** the first version reported *what the camera sees*, continuously. A person
+standing still was announced every 3 seconds forever, and five objects in frame
+produced five sentences. That is the failure mode that gets assistive apps uninstalled
+— the user cannot hear the actual room over the narration and stops trusting it.
+
+The policy now:
+
+| Rule | Effect |
+|---|---|
+| Key on `label + zone` | A person crossing left→right is news. Standing still is not. |
+| Backoff 3s → 6s → 12s | Your own desk chair goes quiet in ~20s instead of repeating forever. |
+| Forget after 8s absent | Leaving and returning resets the backoff, so it is announced again. |
+| One utterance per frame, ranked | Five objects produce one sentence, not five. |
+| Global 2.5s floor | The user keeps the gaps needed to hear traffic and footsteps. |
+
+**Ranking** is box area (proxy for proximity) boosted toward the frame centre (in the
+user's path). Deliberately crude — it is replaced by real depth in M3. Box size is a
+bad distance proxy: a near chair and a far sofa look identical.
+
+**Three zones, not five.** Under stress nobody can act on "slightly left of centre".
+
+**Rejected for now — audio panning.** Speaking into the ear matching the direction
+beats the word "left": blind users localise sound faster than they parse a sentence,
+and it frees the words to carry distance instead. Needs a real audio graph rather than
+`expo-speech`, so it belongs with M3 alongside depth.
+
+**Would change our mind:** blindfold testing. Every number here (3s, 12s, 2.5s, three
+zones) is a guess until someone walks a corridor with it. They are named constants at
+the top of `narrationPolicy.ts` for exactly that reason.
+
+---
+
 ## 2026-08-23 — `react-native-worklets`, not `react-native-worklets-core`
 
 **Chose:** `react-native-worklets` (Software Mansion) + `react-native-vision-camera-worklets`.
