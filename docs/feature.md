@@ -7,7 +7,9 @@ can pick it up cold. Newest first.
 
 ## Phases 1–2 — Camera, detection, narration
 
-**Status:** built, not yet run on a device.
+**Status:** working on device (A001, Android 16, 2026-08-23). Detects objects and
+narrates them aloud. Cadence, thermals and battery not yet measured — see
+`test-checklist.md`.
 **Covers:** `PRD.md` section 8 phases 1 and 2. Modules M1 and M2.
 **Files:** `App.tsx`, `src/narrator.ts`, `src/rateLimit.ts`, `src/rateLimit.test.ts`,
 `app.json`
@@ -53,8 +55,17 @@ package choice, and throttling via camera fps.
 - `npm run typecheck` — clean
 - `npx expo prebuild --platform android` — succeeds; generated manifest carries the
   right permissions and `applicationId com.lumina.app`
+- **On device:** builds, installs, launches, downloads YOLO26n, detects objects and
+  speaks their labels
 
-**Not verified:** anything requiring the device. See `test-checklist.md`.
+Getting there took four runtime bugs that no static check could catch — missing
+resource fetcher, minSdk 24 vs HardwareBuffers, wrong pixel format, and a stray
+`babel.config.js`. All in `bug.md`. Worth reading before wiring up the next model:
+three of the four were config, not code.
+
+**Still unverified:** narration cadence over a long session, dropped-frame rate,
+thermals, battery, every failure case, and the blindfold test. Those decide whether
+this is *usable*, not merely working — see `test-checklist.md`.
 
 ### Known gaps
 
