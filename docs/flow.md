@@ -53,34 +53,48 @@ camera pipeline
        │    ExecuTorch reads frame.getNativeBuffer() and runs YOLO26n
        │    synchronously. Returns Detection[] — blocks this thread.
        │
-       ├─ scheduleOnRN(publish, labels)   react-native-worklets
-       │    hops to the JS thread, fire-and-forget
+       ├─ scheduleOnRN(publish, plainDetections, frame.width)
+       │    react-native-worklets — hops to the JS thread, fire-and-forget.
+       │    bbox is rebuilt as a plain object: native host objects do not
+       │    survive the hop. frame.width must be read before dispose().
        │
        └─ finally: frame.dispose()        MUST happen or the pipeline stalls
 
-App.tsx  publish(labels)                   JS thread
-  ├─ setLabels(labels)                     → debug overlay re-renders
-  └─ for each label:
-       announce(label, `${label} ahead`)
+App.tsx  publish(found, frameWidth)         JS thread
+  ├─ toCandidates(found, frameWidth)        → src/narrationPolicy.ts
+  │    per detection: label + zone → key, text, score
+  │    zoneOf() splits the frame in thirds by bbox centre-x
+  │    score = area × (2 − offCentre) — nearer and more central ranks higher
+  ├─ setLabels(...)                         → debug overlay re-renders
+  └─ narrate(candidates)                    → src/narrator.ts
 
-src/narrator.ts  announce(key, text, priority)
-  ├─ priority 'info' && speaking?  → drop. Chatter never queues.
-  ├─ shouldAnnounce(key, Date.now(), seen)  → src/rateLimit.ts
-  │    false if this key spoke within COOLDOWN_MS (3000)
-  │    on true it records now in `seen`, which is what starts the next cooldown
-  ├─ priority 'alert'? → Speech.stop() first
-  └─ Speech.speak(text, { onDone/onStopped/onError → speaking = false })
+src/narrator.ts  narrate(candidates)
+  └─ selectAnnouncement(candidates, now, tracks, lastSpokeAt, !speaking)
+       │                                    → src/narrationPolicy.ts
+       ├─ prune tracks unseen for FORGET_MS (8s) — a returning object is new again
+       ├─ mark every visible key as seen — happens even when nothing is spoken,
+       │  so an object in view during a long utterance is not wrongly forgotten
+       ├─ !canSpeak (already speaking)? → null. Chatter never queues behind chatter.
+       ├─ within GLOBAL_MIN_GAP_MS (2.5s) of the last utterance? → null
+       └─ highest score first, first key whose delayFor(spoken) has elapsed wins
+            delayFor: 3s → 6s → 12s, capped. At most ONE per frame.
+
+  └─ Speech.speak(pick.text, { onDone/onStopped/onError → speaking = false })
 ```
 
-### Two rate limits, doing different jobs
+### Three rate limits, doing different jobs
 
-They stack, and both are needed:
+They stack, and all three are needed:
 
 - **`fps: 8` camera constraint** — how often detection *runs*. Protects the CPU.
-- **`COOLDOWN_MS` per label** — how often a given label is *spoken*. Protects the user.
+- **`GLOBAL_MIN_GAP_MS` (2.5s)** — how often *anything at all* is spoken. Protects the
+  user's ability to hear the room, however crowded the scene.
+- **`delayFor(spoken)` per key** — how often *this particular object in this zone* is
+  repeated. Backs off so a stationary object goes quiet.
 
-At 8 fps a chair in view produces 8 detections a second but one utterance every 3
-seconds. Removing either one makes the app unusable in a different way.
+At 8 fps a chair in view produces 8 detections a second, one utterance immediately,
+then at +3s, +9s, +21s, and every 12s after. Remove any one of the three and the app
+breaks in a different way.
 
 ---
 

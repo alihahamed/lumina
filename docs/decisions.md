@@ -92,9 +92,11 @@ finding 8 fps too slow to catch obstacles at walking pace. Measure before changi
 
 ---
 
-## 2026-08-23 — Split `rateLimit.ts` out of `narrator.ts`
+## 2026-08-23 — Split the policy out of `narrator.ts`
 
-**Chose:** cooldown logic in `src/rateLimit.ts`, speech in `src/narrator.ts`.
+**Chose:** all decision logic in `src/narrationPolicy.ts`, speech in `src/narrator.ts`.
+(Originally `rateLimit.ts`; renamed when the module's job grew from "when may we
+repeat" to "what do we say and when".)
 
 **Rejected:** one `narrator.ts` file.
 
@@ -102,8 +104,13 @@ finding 8 fps too slow to catch obstacles at walking pace. Measure before changi
 plain `node`. Splitting the pure decision function out means the only non-trivial logic
 in the narration path is testable with `npm test` and no device, no emulator, no mocking.
 
-This is the *only* reason for the split. Do not add more files on the same logic —
-if it does not need testing without a device, it belongs in `narrator.ts`.
+This is the *only* reason for the split, and it has paid for itself: the test caught a
+real backoff bug (doubling on the first utterance skipped the 3s step, so the sequence
+was immediate → 6s → 12s instead of 3s → 6s → 12s) that would have needed a stopwatch
+and a corridor to notice otherwise.
+
+Do not add more files on the same logic — if it does not need testing without a device,
+it belongs in `narrator.ts`.
 
 ---
 
