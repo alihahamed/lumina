@@ -16,7 +16,8 @@
             "minSdkVersion": 26
           }
         }
-      ]
+      ],
+      "@reactvision/react-viro"
     ],
     "android": {
       "package": "com.lumina.app",

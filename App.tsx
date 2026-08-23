@@ -4,6 +4,7 @@ import { models, useObjectDetection } from 'react-native-executorch'
 import type { Frame } from 'react-native-vision-camera'
 import { Camera, useCameraPermission, useFrameOutput } from 'react-native-vision-camera'
 import { scheduleOnRN } from 'react-native-worklets'
+import DepthSpike from './src/DepthSpike'
 import { pulseFor, resetHaptics } from './src/haptics'
 import {
   nearestInPath,
@@ -31,6 +32,8 @@ export default function App() {
   // Which zone we last called each label, so boxes jittering on a zone boundary
   // do not flip back and forth and get announced twice.
   const zoneMemory = useRef<ZoneMemory>(new Map())
+  // ponytail: spike toggle, delete with src/DepthSpike.tsx once depth is decided
+  const [spike, setSpike] = useState(false)
 
   const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
   const { runOnFrame, isReady, downloadProgress, error } = detection
@@ -101,6 +104,8 @@ export default function App() {
   // the camera's YUV (or a vendor-private) format and it throws on every frame.
   const frameOutput = useFrameOutput({ pixelFormat: 'rgb', onFrame, onFrameDropped })
 
+  if (spike) return <DepthSpike onExit={() => setSpike(false)} />
+
   if (!hasPermission) {
     return (
       <View style={styles.center}>
@@ -133,7 +138,7 @@ export default function App() {
       />
 
       {/* Debug overlay. The real user is blind — this exists for us, not them. */}
-      <View style={styles.overlay} pointerEvents="none">
+      <View style={styles.overlay} pointerEvents="box-none">
         <Text style={styles.status}>
           {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
         </Text>
@@ -141,6 +146,9 @@ export default function App() {
         <Text style={styles.detail}>
           path proximity: {proximity.toFixed(2)} · haptic: {pattern}
         </Text>
+        <Pressable style={styles.spikeButton} onPress={() => setSpike(true)}>
+          <Text style={styles.buttonText}>Open depth spike</Text>
+        </Pressable>
         {labels.length === 0 ? (
           <Text style={styles.detail}>nothing detected</Text>
         ) : (
@@ -184,4 +192,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#2B6CB0',
   },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  spikeButton: {
+    marginTop: 10,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    backgroundColor: '#3A3A44',
+  },
 })
