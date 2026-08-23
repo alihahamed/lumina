@@ -25,12 +25,18 @@ import { scheduleOnRN } from 'react-native-worklets'
 const { width, height } = Dimensions.get('window')
 const HIT_TEST_MS = 250
 
-export interface Reading {
+export interface Ray {
   depth: number | null
-  confidence: number | null
   source: string
-  type: string
 }
+
+export interface Reading {
+  left: Ray
+  centre: Ray
+  right: Ray
+}
+
+const EMPTY: Ray = { depth: null, source: 'none' }
 
 // Viro types initialScene.scene as a zero-arg component, so the scene cannot take
 // props. One spike, one instance — a module-level sink is enough.
@@ -41,20 +47,26 @@ function SpikeScene() {
   const sceneRef = useRef<any>(null)
 
   useEffect(() => {
-    const id = setInterval(async () => {
+    // Three rays, not one. Obstacle awareness has to be continuous AND directional —
+    // the user must not have to ask whether something is in the way.
+    const probe = async (x: number): Promise<Ray> => {
       try {
         const results: ViroARHitTestResult[] =
-          await sceneRef.current?.performARHitTestWithPoint(width / 2, height / 2)
+          await sceneRef.current?.performARHitTestWithPoint(x, height / 2)
         const hit = results?.find((r) => r.hasDepthData) ?? results?.[0]
-        readingSink?.({
-          depth: hit?.depthValue ?? null,
-          confidence: hit?.depthConfidence ?? null,
-          source: hit?.depthSource ?? 'none',
-          type: hit?.type ?? 'no hit',
-        })
+        return { depth: hit?.depthValue ?? null, source: hit?.depthSource ?? 'none' }
       } catch {
-        readingSink?.({ depth: null, confidence: null, source: 'error', type: 'error' })
+        return { depth: null, source: 'error' }
       }
+    }
+
+    const id = setInterval(async () => {
+      const [left, centre, right] = await Promise.all([
+        probe(width * 0.2),
+        probe(width * 0.5),
+        probe(width * 0.8),
+      ])
+      readingSink?.({ left, centre, right })
     }, HIT_TEST_MS)
     return () => clearInterval(id)
   }, [])
@@ -97,7 +109,9 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
     (r: Reading) => {
       setReading(r)
       // First reading after a swap = ARCore is genuinely usable, not merely mounted.
-      if (r.depth != null) markReady('arcore')
+      if (r.centre.depth != null || r.left.depth != null || r.right.depth != null) {
+        markReady('arcore')
+      }
     },
     [markReady],
   )
@@ -204,12 +218,21 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
 
         {mode === 'arcore' ? (
           <>
-            <Text style={styles.big}>
-              {reading?.depth != null ? `${reading.depth.toFixed(2)} m` : '— no depth —'}
-            </Text>
-            <Text style={styles.detail}>source: {reading?.source ?? '—'}</Text>
-            <Text style={styles.detail}>confidence: {reading?.confidence ?? '—'}</Text>
-            <Text style={styles.detail}>hit type: {reading?.type ?? '—'}</Text>
+            <View style={styles.rays}>
+              {(['left', 'centre', 'right'] as const).map((k) => {
+                const ray = reading?.[k] ?? EMPTY
+                return (
+                  <View key={k} style={styles.ray}>
+                    <Text style={styles.rayLabel}>{k}</Text>
+                    <Text style={styles.big}>
+                      {ray.depth != null ? ray.depth.toFixed(2) : '—'}
+                    </Text>
+                    <Text style={styles.rayLabel}>m</Text>
+                  </View>
+                )
+              })}
+            </View>
+            <Text style={styles.detail}>source: {reading?.centre.source ?? '—'}</Text>
           </>
         ) : (
           <Text style={styles.big}>{detections} objects</Text>
@@ -255,6 +278,9 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0B0B0F' },
+  rays: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
+  ray: { alignItems: 'center', flex: 1 },
+  rayLabel: { color: '#6B6B76', fontSize: 11 },
   crosshair: {
     position: 'absolute',
     left: width / 2 - 12,
