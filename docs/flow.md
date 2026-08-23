@@ -9,6 +9,12 @@ or call chain appears.
 
 ```
 index.ts
+  ├─ initExecutorch({ resourceFetcher: ExpoResourceFetcher })
+  │    MUST run before any ExecuTorch hook mounts. ExecuTorch downloads model
+  │    weights at runtime and ships no fetcher of its own — without this every
+  │    model fails to load at runtime, while typecheck and the bundle both pass.
+  │    Initialised once here; covers every model added in later phases.
+  │
   └─ registerRootComponent(App)          from expo
 
 App.tsx  App()

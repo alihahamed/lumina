@@ -7,7 +7,8 @@
     "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "plugins": [
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-asset"
     ],
     "android": {
       "package": "com.lumina.app",

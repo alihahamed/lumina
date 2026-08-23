@@ -2,6 +2,69 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
+## 2026-08-23 — "ResourceFetcher adapter is not initialized"
+
+**Status:** fixed
+**Files:** `index.ts`, `package.json`
+
+### Symptom
+
+App launched and bundled cleanly (`Android Bundled 3947ms index.ts (1078 modules)`),
+then logged at runtime:
+
+```
+ERROR [React Native ExecuTorch] ResourceFetcher adapter is not initialized.
+Please call initExecutorch({ resourceFetcher: ... }) with a valid adapter, e.g.,
+from react-native-executorch-expo-resource-fetcher or
+react-native-executorch-bare-resource-fetcher.
+```
+
+No detections, no model download.
+
+### Root cause
+
+`react-native-executorch` does not fetch model weights itself. It downloads `.pte` files
+at runtime from Hugging Face, and delegates every file operation to a **resource fetcher
+adapter** that the app must supply — the library ships none by default, because Expo and
+bare React Native need different filesystem implementations.
+
+We called `useObjectDetection` without ever calling `initExecutorch`, so there was no
+adapter to fetch `yolo26_n_xnnpack_fp32.pte` with.
+
+Missed when wiring the model up: `initExecutorch` is exported from the package root and
+was visible in `index.d.ts`, but the hook API works fine in TypeScript without it. The
+failure is runtime-only, which is why typecheck and the bundle both passed.
+
+### Fix
+
+Installed `react-native-executorch-expo-resource-fetcher` and its peers
+(`expo-asset`, `expo-file-system`), then initialised in `index.ts` **before**
+`registerRootComponent`:
+
+```ts
+initExecutorch({ resourceFetcher: ExpoResourceFetcher })
+```
+
+Entry point rather than `App.tsx` because it must run before any ExecuTorch hook
+mounts. Use the `expo` adapter, not `bare` — we are an Expo project.
+
+**Required a native rebuild.** `expo-file-system` and `expo-asset` both ship Android
+native code and were not in the previous build's autolinking manifest, so
+`npx expo start` alone was not enough.
+
+### How we know it's fixed
+
+Overlay progresses past `downloading model · N%` and speaks "Lumina ready".
+Second launch skips the download — proving the fetcher also cached to disk.
+
+### Anything still open
+
+Nothing. Note for later phases: every additional ExecuTorch model (CLIP, Whisper,
+Kokoro, the offline VLM) goes through this same adapter. It is initialised once and
+covers all of them.
+
+---
+
 ## 2026-08-23 — Metro can't bundle: "Cannot find module 'babel-preset-expo'"
 
 **Status:** fixed
