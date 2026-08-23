@@ -50,7 +50,8 @@ minSdk 26 is Android 8.0 (2017). `PRD.md` targets Android 12+, so this costs not
 
 ### How we know it's fixed
 
-The error stops and detections appear in the overlay.
+Confirmed on device (A001, Android 16). The exception stops and detections appear in
+the overlay after a rebuild with minSdk 26.
 
 ### Anything still open
 
@@ -106,8 +107,8 @@ JS-only change — no rebuild, Metro reload is enough.
 
 ### How we know it's fixed
 
-Not independently verified — it is a precondition for the frame path working at all,
-and will be confirmed once detections appear.
+Confirmed on device (A001, Android 16) — detections appear and are spoken, so the
+frame path reaches ExecuTorch with a buffer it accepts.
 
 ### Anything still open
 
