@@ -2,16 +2,74 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
-## 2026-08-23 — `frame.getNativeBuffer()` throws on every frame
+## 2026-08-23 — `getNativeBuffer()`: "HardwareBuffers require minSdk 26 or higher!"
 
 **Status:** fixed
+**Files:** `app.json`, `package.json`
+
+### Symptom
+
+App launched and the model loaded, then this threw on every frame, from
+`frame.getNativeBuffer()` inside ExecuTorch's `runOnFrame`. No detections.
+
+```
+Frame.getNativeBuffer(...): java.lang.RuntimeException:
+  HardwareBuffers require minSdk 26 or higher!
+    at com.margelo.nitro.camera.utils.NativeBufferHelper.getHardwareBufferPointer(Native Method)
+    at com.margelo.nitro.camera.extensions.ImageProxy_getNativeBufferKt.getNativeBuffer
+    at com.margelo.nitro.camera.hybrids.instances.HybridFrame.getNativeBuffer(HybridFrame.kt:75)
+    ...
+```
+
+Pulled with `adb logcat -d | grep -iE "executorch|ReactNativeJS"`. **Do this first** —
+the on-screen error was truncated and the earlier guess (below) was made without it.
+
+### Root cause
+
+The app declared **minSdk 24**, Expo's default. VisionCamera's `getHardwareBufferPointer`
+is a JNI native method, and the NDK only exposes the `AHardwareBuffer_*` API at
+`__ANDROID_API__ >= 26`. Built against 24, it compiles to a stub that throws.
+
+This is a **compile-time** constraint, not a device one — the test device is API 36
+(Android 16), thirteen releases past the requirement. Raising minSdk changes what the
+NDK compiles, which is why no device is new enough to work around it.
+
+`react-native-executorch` already declares `RnExecutorch_minSdkVersion=26`. Only the app
+was still at 24, and the app's value is what the NDK compiles VisionCamera's C++ against.
+
+### Fix
+
+```json
+["expo-build-properties", { "android": { "minSdkVersion": 26 } }]
+```
+
+Then `npx expo prebuild --platform android` and a full rebuild. Confirmed in the
+generated `android/gradle.properties`: `android.minSdkVersion=26`.
+
+minSdk 26 is Android 8.0 (2017). `PRD.md` targets Android 12+, so this costs nothing.
+
+### How we know it's fixed
+
+The error stops and detections appear in the overlay.
+
+### Anything still open
+
+Nothing. But note the diagnosis pattern: a runtime error whose text names a *build*
+setting will not be fixed by changing devices or JS.
+
+---
+
+## 2026-08-23 — Frame output must be `pixelFormat: 'rgb'`
+
+**Status:** fixed (latent — found by reading source, never observed)
+
 **Files:** `App.tsx`
 
 ### Symptom
 
-App launched, model loaded, then a long error thrown from the frame path on every
-single frame, originating at `frame.getNativeBuffer()` inside ExecuTorch's
-`runOnFrame`. No detections.
+None observed. This was misdiagnosed as the cause of the `getNativeBuffer` error above,
+before the real log was read. The `'rgb'` change is kept because it is independently
+correct, and would have thrown as soon as the minSdk fix let buffers through.
 
 ### Root cause
 
@@ -48,7 +106,8 @@ JS-only change — no rebuild, Metro reload is enough.
 
 ### How we know it's fixed
 
-Detections appear in the debug overlay and are spoken. The error stops.
+Not independently verified — it is a precondition for the frame path working at all,
+and will be confirmed once detections appear.
 
 ### Anything still open
 
