@@ -34,13 +34,25 @@ sudo usermod -aG adbusers $USER
 `no permissions` and you will lose an hour to it. **Log out and back in** after
 the `usermod` so the group applies.
 
-Then in `~/.bashrc`:
+Then set the paths for **your** shell.
+
+bash / zsh — in `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 export ANDROID_HOME=$HOME/Android/Sdk
 export PATH=$PATH:$ANDROID_HOME/platform-tools
 ```
+
+fish — run once, these persist as universal variables:
+
+```fish
+fish_add_path $HOME/Android/Sdk/platform-tools
+set -Ux ANDROID_HOME $HOME/Android/Sdk
+set -Ux JAVA_HOME /usr/lib/jvm/java-17-openjdk
+```
+
+If `adb` comes back as "unknown command", this is the step you skipped.
 
 Install Android Studio once and let it fetch the SDK, build-tools and **NDK**
 (ExecuTorch needs the NDK). Fighting the AUR SDK packages by hand is a known
