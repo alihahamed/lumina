@@ -99,8 +99,32 @@ Edit TypeScript, save, the phone reloads in about a second.
 Expo Go ships a fixed binary that cannot load them. You need the development build
 above. Everyone hits this once.
 
-**Campus Wi-Fi.** Institutional networks isolate clients, so Metro can't reach your
-phone. Either use your phone's hotspot for the laptop, or:
+**"Connecting to the development server" forever.** The app cannot reach Metro. Almost
+always a firewall or a network that isolates clients — not a code problem. Metro will
+happily report itself as running while nothing can reach it.
+
+The fix that sidesteps both, over USB, no firewall changes:
+
+```bash
+adb reverse tcp:8081 tcp:8081
+npx expo start --dev-client --localhost
+```
+
+`adb reverse` maps the phone's `localhost:8081` to your laptop's, and `--localhost`
+makes Metro hand the app a `localhost` URL instead of a LAN IP. **Re-run `adb reverse`
+every time you replug the phone or restart the adb server** — it does not persist.
+
+On Arch, `ufw` is active by default once installed and denies incoming, which blocks
+port 8081. If you would rather work wirelessly than over USB:
+
+```bash
+sudo ufw allow from 192.168.0.0/24 to any port 8081 proto tcp
+```
+
+Scope it to your subnet — do not open 8081 to the world.
+
+**Campus Wi-Fi.** Institutional networks isolate clients even with the firewall open.
+Use USB (above), your phone's hotspot, or:
 
 ```bash
 npx expo start --tunnel
