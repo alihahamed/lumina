@@ -19,6 +19,17 @@ because it exists, and never repeat the same content across files.
 | Something broken was fixed | `docs/bug.md` | Symptom → root cause → fix → how we know it's fixed |
 | Logic needs verifying by hand or on a device | `docs/test-checklist.md` | The check, and what a pass looks like |
 
+## Two files that are not situational
+
+`HANDOFF.md` — **update the "Current session" section at the end of every session.**
+It is what an agent with no context reads first. Stale handoff is worse than none.
+
+`IMPLEMENTATION.md` — update when you add or remove a file, a dependency, or a
+load-bearing setting. It is the map of what exists.
+
+`STATUS.md` is the team's single page. Update it when a phase completes or an open
+decision closes — not for routine work.
+
 ## When NOT to write anything
 
 - Renames, formatting, comment tweaks, dependency bumps with no behaviour change.

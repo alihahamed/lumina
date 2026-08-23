@@ -41,7 +41,10 @@ Early. Phase 2 of 7 — camera, YOLO26n detection, and rate-limited narration.
 
 | File | What's in it |
 |---|---|
-| [`PRD.md`](PRD.md) | Architecture, stack decisions and the reasoning behind them. **Start here.** |
+| [`STATUS.md`](STATUS.md) | Where the project is, what is open, what is next. **Start here.** |
+| [`IMPLEMENTATION.md`](IMPLEMENTATION.md) | What is actually built, and what each piece does |
+| [`HANDOFF.md`](HANDOFF.md) | Session context for an AI agent picking this up cold |
+| [`PRD.md`](PRD.md) | Architecture, stack decisions and the reasoning behind them |
 | [`SETUP.md`](SETUP.md) | Getting it running on an Android device |
 | [`STACK-RESEARCH.md`](STACK-RESEARCH.md) | Model research — benchmarks, licenses, pricing, sources |
 | [`AGENTS.md`](AGENTS.md) | Conventions for anyone (or anything) writing code here |
