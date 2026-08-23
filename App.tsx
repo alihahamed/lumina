@@ -63,7 +63,10 @@ export default function App() {
 
   const onFrameDropped = useCallback(() => setDropped((n) => n + 1), [])
 
-  const frameOutput = useFrameOutput({ onFrame, onFrameDropped })
+  // 'rgb' is not optional. ExecuTorch's FrameExtractor accepts only
+  // R8G8B8A8 / R8G8B8X8 / R8G8B8 AHardwareBuffers; the default 'native' hands it
+  // the camera's YUV (or a vendor-private) format and it throws on every frame.
+  const frameOutput = useFrameOutput({ pixelFormat: 'rgb', onFrame, onFrameDropped })
 
   if (!hasPermission) {
     return (

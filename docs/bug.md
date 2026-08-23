@@ -2,6 +2,69 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
+## 2026-08-23 — `frame.getNativeBuffer()` throws on every frame
+
+**Status:** fixed
+**Files:** `App.tsx`
+
+### Symptom
+
+App launched, model loaded, then a long error thrown from the frame path on every
+single frame, originating at `frame.getNativeBuffer()` inside ExecuTorch's
+`runOnFrame`. No detections.
+
+### Root cause
+
+`useFrameOutput` defaults to `pixelFormat: 'native'`, and we never overrode it.
+
+`'native'` means "whatever the camera produces with zero conversion" — on Android that
+is YUV, or a vendor-specific private format. It is the right choice for GPU consumers
+like Skia, which take the buffer straight as a texture.
+
+ExecuTorch is not a GPU consumer. It reads pixels on the CPU, and
+`common/rnexecutorch/utils/FrameExtractor.cpp:75-87` accepts exactly three formats:
+
+```cpp
+if (desc.format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM) { ... }
+else if (desc.format == AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM) { ... }
+else if (desc.format == AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM) { ... }
+else throw RnExecutorchError(PlatformNotSupported,
+                             "Unsupported AHardwareBuffer format: %u");
+```
+
+All three are RGB. A YUV buffer hits the `else` and throws — once per frame.
+
+The VisionCamera docs do warn about this (`pixel-formats-map.mdx`: "'native' … might
+also be a RAW format or a vendor-specific private format"), and note that LiteRT-style
+consumers should stream `'rgb'` directly. That guidance was read and not applied.
+
+### Fix
+
+```ts
+useFrameOutput({ pixelFormat: 'rgb', onFrame, onFrameDropped })
+```
+
+JS-only change — no rebuild, Metro reload is enough.
+
+### How we know it's fixed
+
+Detections appear in the debug overlay and are spoken. The error stops.
+
+### Anything still open
+
+`'rgb'` always requires a conversion from the camera's native YUV and uses noticeably
+more memory and bandwidth than `'yuv'` would. That is the price of ExecuTorch's CPU
+path and is not negotiable while we use `runOnFrame`.
+
+**If `dropped frames` climbs**, this is a contributing cost — reduce
+`targetResolution` on `useFrameOutput` before touching `fps` or `INPUT_SIZE`, since
+the conversion scales with frame size.
+
+**Anyone editing `useFrameOutput` must keep `pixelFormat: 'rgb'`.** Removing it
+reintroduces this bug, and it fails at runtime only — typecheck and the bundle both pass.
+
+---
+
 ## 2026-08-23 — "ResourceFetcher adapter is not initialized"
 
 **Status:** fixed
