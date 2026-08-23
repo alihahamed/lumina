@@ -76,9 +76,43 @@ Do this in pairs. One blindfolded holding the phone, one spotting.
 
 ---
 
-## Phase 3+ — add sections as phases land
+## Phase 3 — haptic obstacle warning
 
-Depth/haptics, OCR, cloud VLM, spatial memory. Each gets its own section here before
-it is called done, and every one of them needs the failure cases and the blindfold test.
+Built, **entirely unverified on device**. The `path proximity` readout in the debug
+overlay exists so you can check the heuristic against reality — watch it while you walk.
+
+### Does the signal mean anything
+- [ ] Walk toward a chair: `path proximity` rises smoothly toward 1.0
+- [ ] Back away: it falls again
+- [ ] A near small object reads higher than a far large one (the whole point — box area
+      could not tell these apart)
+- [ ] Hold the phone tilted down: does everything read as close? **Expected to fail** —
+      record how badly, it decides whether tilt compensation is needed
+
+### Haptics
+- [ ] Pulses start only inside ~0.55 proximity, not across the room
+- [ ] Pulse rate rises noticeably as you approach
+- [ ] Strength rises too (Light → Medium → Heavy)
+- [ ] An object off to the side does **not** buzz — only things ahead
+- [ ] Pulses continue while speech is playing (safety must not wait on narration)
+- [ ] **Airplane mode:** haptics still work. This layer may never need the network
+
+### Known blind spots — confirm how bad
+- [ ] Walk toward a blank wall. **It will not buzz** — walls have no COCO class and
+      there is no depth. Record this; it is the strongest argument for real depth
+- [ ] Same for a glass door, a step down, and a doorway
+- [ ] A wall-mounted sign should read as far away, not close
+
+### Blindfold test — required before phase 3 counts as done
+- [ ] Can you avoid a chair using haptics alone, with the screen off and sound muted?
+- [ ] Does the pulse rate tell you distance, or only presence?
+- [ ] Honest answer in `feature.md`, even if it is "not usable yet"
+
+---
+
+## Phase 4+ — add sections as phases land
+
+OCR, cloud VLM, spatial memory. Each gets its own section here before it is called
+done, and every one of them needs the failure cases and the blindfold test.
 
 **Never test with a real blind user without a sighted spotter present.**
