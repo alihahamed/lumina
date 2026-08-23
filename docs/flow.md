@@ -28,7 +28,7 @@ App.tsx  App()
   │    │  then caches it — downloadProgress drives the overlay text
   │    └─ exposes runOnFrame, null until isReady
   │
-  ├─ effect on isReady → announce('ready', 'Lumina ready', 'alert')
+  ├─ effect on isReady → alert('Lumina ready')   interrupts, bypasses the policy
   │
   └─ useFrameOutput({ onFrame, onFrameDropped })
        └─ returns frameOutput, passed to <Camera outputs={[frameOutput]}>
