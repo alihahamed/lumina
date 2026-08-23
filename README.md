@@ -45,6 +45,11 @@ Early. Phase 2 of 7 — camera, YOLO26n detection, and rate-limited narration.
 | [`SETUP.md`](SETUP.md) | Getting it running on an Android device |
 | [`STACK-RESEARCH.md`](STACK-RESEARCH.md) | Model research — benchmarks, licenses, pricing, sources |
 | [`AGENTS.md`](AGENTS.md) | Conventions for anyone (or anything) writing code here |
+| [`docs/decisions.md`](docs/decisions.md) | Why things are the way they are, and what we rejected |
+| [`docs/flow.md`](docs/flow.md) | How execution actually moves through the code |
+| [`docs/feature.md`](docs/feature.md) | Start-to-finish trail per feature |
+| [`docs/bug.md`](docs/bug.md) | Start-to-finish trail per bug |
+| [`docs/test-checklist.md`](docs/test-checklist.md) | What must pass before a phase is done |
 
 ## Quick start
 
