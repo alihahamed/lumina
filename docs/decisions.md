@@ -7,6 +7,68 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-08-23 — Haptics ship on a proximity heuristic, not real depth
+
+**Chose:** estimate proximity from where a bounding box's *base* sits in the frame, and
+drive haptics from the nearest object in the centre zone.
+
+**Rejected:** `useDepthOutput` (VisionCamera v5), ViroReact + ARCore Depth API, and a
+monocular depth model — all three for concrete reasons below.
+
+**Why the PRD's plan does not work on this hardware.** `PRD.md` says depth drives the
+haptics. It still should. But:
+
+1. **No hardware depth on the test device.** `adb shell dumpsys media.camera` reports
+   only `BACKWARD_COMPATIBLE` and `LOGICAL_MULTI_CAMERA` — **no `DEPTH_OUTPUT`**. So
+   `useDepthOutput` has no stream to consume. Check this before assuming any device works:
+
+   ```bash
+   adb shell dumpsys media.camera | grep -oE "DEPTH_OUTPUT|LOGICAL_MULTI_CAMERA"
+   ```
+
+2. **ARCore Depth would work, but fights us for the camera.** ARCore *is* installed and
+   its Depth API is ML-based, so it needs no depth hardware. But reaching it from React
+   Native means ViroReact, which runs its **own ARCore camera session** — and on Android
+   two sessions cannot own the camera at once. Adopting it means ARCore owns the camera
+   and YOLO26n is fed from ARCore frames, which ViroReact does not expose. That is a
+   re-architecture, not an addition.
+
+3. **No prebuilt depth model.** `react-native-executorch`'s registry has no depth
+   category (llm, classification, object_detection, pose, segmentation, style_transfer,
+   speech, embeddings, ocr, vad — no depth). Depth Anything would have to be exported to
+   ExecuTorch by us.
+
+**The heuristic.** For a forward-facing camera at chest height, an object's base falls
+lower in the frame the closer it is. Crucially this is **independent of object size** —
+unlike box area, which cannot tell a near chair from a distant sofa. `proximityOf()`
+returns `y2 / frameHeight`, clamped.
+
+**Its ceiling, honestly.** It assumes the object rests on the floor and the phone is held
+roughly upright. A sign on a wall reads as far away. A phone tilted down reads everything
+as close. It is a monotonic ordering, not metres, so it cannot say "two metres ahead".
+Marked with a `ponytail:` comment at the site.
+
+**Only the centre zone buzzes.** Things to the side get walked past; buzzing about them
+trains the user to ignore the buzz.
+
+**Pulse rate rises with proximity** (1200ms → 250ms) and so does strength (Light →
+Medium → Heavy). Two channels carrying one message, so it still reads through a pocket.
+A rising rate is understood without being taught.
+
+**The real fix, ranked:**
+
+1. Export Depth Anything V2-small to ExecuTorch and run it as a second model on the
+   frames we already have. No second camera session, no ViroReact. Best path.
+2. Test on a device with a ToF sensor, where `useDepthOutput` works as originally planned.
+3. Re-architect around ARCore. Only worth it if we need Cloud Anchors for M6 anyway —
+   revisit then, since M6 may force this decision regardless.
+
+**Would change our mind:** blindfold testing showing the heuristic misjudges obstacles
+dangerously. Given it cannot see walls, glass, or steps at all, that is likely — which is
+why (1) matters and this is explicitly an interim.
+
+---
+
 ## 2026-08-23 — Narration announces changes, not state
 
 **Chose:** rank all detections, speak at most one per frame, key cooldowns on

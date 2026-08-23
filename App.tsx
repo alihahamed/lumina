@@ -4,7 +4,8 @@ import { models, useObjectDetection } from 'react-native-executorch'
 import type { Frame } from 'react-native-vision-camera'
 import { Camera, useCameraPermission, useFrameOutput } from 'react-native-vision-camera'
 import { scheduleOnRN } from 'react-native-worklets'
-import { toCandidates, type Detected } from './src/narrationPolicy'
+import { pulseFor, resetHaptics } from './src/haptics'
+import { nearestInPath, toCandidates, type Detected } from './src/narrationPolicy'
 import { alert, narrate, resetNarrator } from './src/narrator'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
@@ -19,6 +20,7 @@ export default function App() {
   const { hasPermission, requestPermission } = useCameraPermission()
   const [labels, setLabels] = useState<string[]>([])
   const [dropped, setDropped] = useState(0)
+  const [proximity, setProximity] = useState(0)
 
   const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
   const { runOnFrame, isReady, downloadProgress, error } = detection
@@ -29,13 +31,23 @@ export default function App() {
 
   useEffect(() => {
     if (isReady) alert('Lumina ready')
-    return resetNarrator
+    return () => {
+      resetNarrator()
+      resetHaptics()
+    }
   }, [isReady])
 
-  const publish = useCallback((found: Detected[], frameWidth: number) => {
-    // Ranking and cooldowns live in narrationPolicy — see docs/decisions.md.
-    const candidates = toCandidates(found, frameWidth)
+  const publish = useCallback((found: Detected[], frameWidth: number, frameHeight: number) => {
+    // Ranking, cooldowns and proximity live in narrationPolicy — see docs/decisions.md.
+    const candidates = toCandidates(found, frameWidth, frameHeight)
     setLabels(candidates.map((c) => c.text))
+
+    // Haptics first, and unconditionally: this is the safety layer and must not wait
+    // on speech, on a name for the obstacle, or on anything off-device.
+    const path = nearestInPath(candidates)
+    setProximity(path?.proximity ?? 0)
+    if (path != null) pulseFor(path.proximity)
+
     narrate(candidates)
   }, [])
 
@@ -62,6 +74,7 @@ export default function App() {
             bbox: { x1: d.bbox.x1, y1: d.bbox.y1, x2: d.bbox.x2, y2: d.bbox.y2 },
           })),
           frame.width,
+          frame.height,
         )
       } finally {
         // Not disposing stalls the camera pipeline.
@@ -115,6 +128,7 @@ export default function App() {
           {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
         </Text>
         <Text style={styles.detail}>dropped frames: {dropped}</Text>
+        <Text style={styles.detail}>path proximity: {proximity.toFixed(2)}</Text>
         {labels.length === 0 ? (
           <Text style={styles.detail}>nothing detected</Text>
         ) : (

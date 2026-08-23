@@ -30,7 +30,15 @@ export interface Candidate {
   key: string
   text: string
   score: number
+  zone: Zone
+  /** 0 = far, 1 = at your feet. See {@link proximityOf} — it is a heuristic. */
+  proximity: number
 }
+
+/** Below this, nothing is close enough to be worth a buzz. */
+export const PULSE_MIN_PROXIMITY = 0.55
+export const PULSE_SLOWEST_MS = 1200
+export const PULSE_FASTEST_MS = 250
 
 /** A newly-seen object is announced at once, then backs off while it persists. */
 export const FIRST_DELAY_MS = 3000
@@ -76,13 +84,60 @@ export function zoneOf(box: Box, frameWidth: number): Zone {
 }
 
 /**
+ * How close something is, from where its base sits in the frame.
+ *
+ * For a forward-facing camera at chest height, the bottom edge of a box — where the
+ * object meets the floor — falls lower in the frame the closer it is. Unlike box
+ * area this is independent of how big the object actually is, so a nearby chair and
+ * a distant sofa are told apart.
+ *
+ * ponytail: heuristic, not metric. Assumes the object rests on the floor and the
+ * phone is held roughly upright. A sign on a wall reads as far; a phone held tilted
+ * down reads everything as close. Replace with real depth — see docs/decisions.md
+ * for why this device cannot supply it today.
+ */
+export function proximityOf(box: Box, frameHeight: number): number {
+  if (frameHeight <= 0) return 0
+  return Math.max(0, Math.min(1, box.y2 / frameHeight))
+}
+
+/**
+ * Gap between haptic pulses for a given proximity, or null to stay silent.
+ * Closer means faster: a rising pulse rate is understood without being taught.
+ */
+export function pulseIntervalFor(proximity: number): number | null {
+  if (proximity < PULSE_MIN_PROXIMITY) return null
+  const urgency = (proximity - PULSE_MIN_PROXIMITY) / (1 - PULSE_MIN_PROXIMITY)
+  return Math.round(PULSE_SLOWEST_MS - urgency * (PULSE_SLOWEST_MS - PULSE_FASTEST_MS))
+}
+
+/**
+ * The closest thing directly in the user's path, or null.
+ *
+ * Only 'ahead' counts: things to the side get walked past, and buzzing about them
+ * would train the user to ignore the buzz.
+ */
+export function nearestInPath(candidates: Candidate[]): Candidate | null {
+  let nearest: Candidate | null = null
+  for (const c of candidates) {
+    if (c.zone !== 'ahead') continue
+    if (nearest == null || c.proximity > nearest.proximity) nearest = c
+  }
+  return nearest
+}
+
+/**
  * Turns raw detections into ranked, speakable candidates.
  *
  * Score is box area — a stand-in for "how close", which is a stand-in for "how much
  * it matters" — boosted for things near the centre of the frame, because those are
  * in the user's path. It is a rough proxy and will be replaced by real depth in M3.
  */
-export function toCandidates(detections: Detected[], frameWidth: number): Candidate[] {
+export function toCandidates(
+  detections: Detected[],
+  frameWidth: number,
+  frameHeight: number,
+): Candidate[] {
   return detections.map((d) => {
     const label = d.label.toLowerCase().replace(/_/g, ' ')
     const zone = zoneOf(d.bbox, frameWidth)
@@ -95,6 +150,8 @@ export function toCandidates(detections: Detected[], frameWidth: number): Candid
       key: `${label}|${zone}`,
       text: `${label} ${zone}`,
       score: area * (2 - offCentre),
+      zone,
+      proximity: proximityOf(d.bbox, frameHeight),
     }
   })
 }

@@ -66,6 +66,12 @@ App.tsx  publish(found, frameWidth)         JS thread
   │    zoneOf() splits the frame in thirds by bbox centre-x
   │    score = area × (2 − offCentre) — nearer and more central ranks higher
   ├─ setLabels(...)                         → debug overlay re-renders
+  ├─ nearestInPath(candidates)              → closest candidate with zone 'ahead'
+  │    └─ pulseFor(proximity)               → src/haptics.ts
+  │         pulseIntervalFor(): null below PULSE_MIN_PROXIMITY (0.55),
+  │         else 1200ms → 250ms as it gets closer; strength rises too.
+  │         Runs BEFORE narrate() and independently of it — the safety layer
+  │         must not wait on speech, on a name, or on anything off-device.
   └─ narrate(candidates)                    → src/narrator.ts
 
 src/narrator.ts  narrate(candidates)
@@ -112,12 +118,10 @@ A climbing dropped count means detection cannot keep up: lower `fps`, lower `INP
 
 ## Not wired up yet
 
-Phases 3–7 from `PRD.md` section 8. When they land, extend this file rather than
-starting a new one:
+Phases 4–7 from `PRD.md` section 8. M3 haptics are wired above, but on a proximity
+heuristic rather than real depth — `useDepthOutput` needs hardware this device lacks.
+See `decisions.md`. When the rest land, extend this file rather than starting a new one:
 
-- **M3 depth → haptics.** VisionCamera v5 ships `useDepthOutput`, which may make this a
-  second output on the same `<Camera>` rather than a separate ARCore session. Check
-  before reaching for ViroReact.
 - **M4 OCR** — a user-triggered single-frame path, not part of this hot loop.
 - **M5 cloud VLM** — user-triggered, goes out through the Hono endpoint.
 - **M6 spatial memory** — CLIP embedding per anchor, then `supabase.rpc('match_anchors')`.
