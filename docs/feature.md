@@ -10,7 +10,7 @@ can pick it up cold. Newest first.
 **Status:** built, not yet run on a device.
 **Covers:** `PRD.md` section 8 phases 1 and 2. Modules M1 and M2.
 **Files:** `App.tsx`, `src/narrator.ts`, `src/rateLimit.ts`, `src/rateLimit.test.ts`,
-`app.json`, `babel.config.js`
+`app.json`
 
 ### What it does
 
@@ -32,8 +32,9 @@ debug overlay shows detections, dropped frames, and model download progress.
 
 3. **Config.** `app.json` sets package `com.lumina.app` and the CAMERA / RECORD_AUDIO /
    VIBRATE permissions. Neither VisionCamera nor ExecuTorch ships an Expo config plugin,
-   so permissions go straight in `android.permissions`. `babel.config.js` adds
-   `react-native-worklets/plugin` **last** — it compiles the `'worklet'` directives.
+   so permissions go straight in `android.permissions`. **No `babel.config.js`** —
+   `babel-preset-expo` applies `react-native-worklets/plugin` on its own whenever the
+   package is installed. Adding one broke the bundler; see `bug.md` 2026-08-23.
 
 4. **Narration.** Split into a pure cooldown check (`rateLimit.ts`) and the speech call
    (`narrator.ts`) so the logic is testable without a device.
