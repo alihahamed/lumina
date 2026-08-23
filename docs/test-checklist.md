@@ -26,18 +26,22 @@ npx expo-doctor   # environment and dependency sanity
 
 ## Phase 1–2 — camera, detection, narration
 
+Ticked items confirmed 2026-08-23 on **A001, Android 16 (API 36)**. Everything still
+unticked is genuinely unchecked — the checklist is only worth anything if boxes mean
+what they say. Untested on any second device.
+
 ### First run
-- [ ] `npx expo run:android` installs and launches on a physical device
-- [ ] Camera permission prompt appears; granting it shows the preview
+- [x] `npx expo run:android` installs and launches on a physical device
+- [x] Camera permission prompt appears; granting it shows the preview
 - [ ] **Denying** the permission shows the "Grant camera access" screen, not a crash
-- [ ] Overlay shows `downloading model · N%` climbing on first launch
+- [x] Overlay shows `downloading model · N%` climbing on first launch
 - [ ] Speaks "Lumina ready" once the model finishes
 - [ ] Second launch skips the download — the model is cached
 - [ ] **Airplane mode, second launch:** still works. Nothing in this phase may need network
 
 ### Detection
-- [ ] Point at a chair / person / laptop — the right label appears in the overlay
-- [ ] Label is spoken
+- [x] Point at a chair / person / laptop — the right label appears in the overlay
+- [x] Label is spoken
 - [ ] Detection survives moving between a bright corridor and a dim one
 
 ### Narration cadence — the one that decides if this is usable
