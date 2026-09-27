@@ -7,6 +7,35 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-09-27 — Release readiness: hosted depth model, JWT auth, no Viro
+
+So the app works off the laptop and on phones other than begoniain.
+
+- **Depth model hosted on the repo's GitHub release `models-v1`** (public, 99 MB, sha256 in
+  the release notes). Before this, it was adb-pushed onto one phone, and every other
+  install silently fell back to the bbox heuristic. **Rejected:** Hugging Face, which is
+  fine but needs another account, and Supabase Storage, which needs a dashboard upload.
+  Licence: upstream says Depth-Anything-V2-**Small** is Apache-2.0. The metric fine-tune
+  is not listed separately, so it is credited in the release notes as the Small model.
+- **Backend auth is a Supabase JWT, verified locally.** The project signs ES256 and
+  publishes its JWKS, so `jose` checks each token with no call to Supabase and no shared
+  secret. Tested: no token, garbage and a forged signature → 401; a real anonymous user →
+  200. **Rejected:** the shared `LUMINA_APP_TOKEN` (baked into the APK, so extractable),
+  and calling `/auth/v1/user` per request (an extra round trip for the same answer).
+  **Known gap:** anyone can mint anonymous users with the public key. Supabase
+  rate-limits anonymous sign-ups per IP, which bounds it. A per-user daily cap is the next
+  step if the free tier is abused (`ponytail:`).
+- **Viro and the depth spike removed** (`src/DepthSpike.tsx`, `@reactvision/react-viro`,
+  `expo-clipboard`). The spike's question was answered on 2026-09-23 (no ARCore depth on
+  begoniain). Viro's plugin also overwrote manifest `<queries>` (`docs/bug.md`). If
+  ARCore guidance is ever built, bring ARCore back deliberately.
+- **Offline VLM downloads on Wi-Fi only** (`expo-network`), then loads from storage on
+  any connection. It is latched for the session, so leaving Wi-Fi never unloads it.
+  **Rejected:** an opt-in setting, which a blind user would have to find.
+- **Debug overlay hidden in release builds** unless `EXPO_PUBLIC_SHOW_DEBUG=1`.
+- **Release APK signed with the debug keystore** (Expo default), fine for sideloading.
+  A real keystore is needed before any store release.
+
 ## 2026-09-27 — Phase 6: recognition first, hold-and-speak, anonymous Supabase users
 
 **Chose — recognition, not guidance.** "Save this as the kitchen" stores a CLIP
@@ -120,7 +149,7 @@ gestures) and a voice command (no STT yet).
 laptop, and the phone reaches it with `adb reverse tcp:8787 tcp:8787`. Vercel only
 matters once someone tests away from the laptop.
 
-**Auth stopgap:** an optional shared token (`LUMINA_APP_TOKEN` / `EXPO_PUBLIC_LUMINA_TOKEN`).
+**Auth stopgap** (superseded the same day by a Supabase JWT check, see the release-readiness entry): an optional shared token (`LUMINA_APP_TOKEN` / `EXPO_PUBLIC_LUMINA_TOKEN`).
 It is baked into the app, so it only stops a leaked URL being used by strangers. The real
 fix is a Supabase JWT once auth exists. `ponytail:` at the site.
 

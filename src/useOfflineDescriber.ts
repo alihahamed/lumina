@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { File, Paths } from 'expo-file-system'
+import { NetworkStateType, useNetworkState } from 'expo-network'
 import { models, useLLM } from 'react-native-executorch'
 import { firstSentences } from './text'
 
@@ -10,6 +12,9 @@ import { firstSentences } from './text'
  * LFM2.5-VL-450M, the PRD's model family, pre-converted in react-native-executorch.
  * Not the 1.6B: that is a 2.4 GB download and the phone has ~2.2 GB free with
  * YOLO and depth already loaded. The 450M is 649 MB. docs/decisions.md 2026-09-27.
+ *
+ * The first download only starts on Wi-Fi; no setting to find for a blind user, and no
+ * surprise 649 MB on mobile data.
  */
 const MODEL = models.llm.lfm2_5_vl_450m()
 
@@ -34,8 +39,26 @@ const MESSAGES = [
 // waited long enough; whatever was generated so far is spoken.
 const MAX_GENERATE_MS = 30_000
 
+// Written once the model has loaded, so later launches load it from storage on any
+// connection. Before that, the 649 MB download waits for Wi-Fi.
+const downloadedFlag = () => new File(Paths.document, 'offline-vlm-downloaded')
+
 export function useOfflineDescriber() {
-  const llm = useLLM({ model: MODEL })
+  const network = useNetworkState()
+  // Latched: once allowed, stays allowed for the session. If it flipped back, leaving
+  // Wi-Fi would unload the model — exactly when offline description is needed.
+  const [allowed, setAllowed] = useState(() => {
+    try {
+      return downloadedFlag().exists
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    if (!allowed && network.type === NetworkStateType.WIFI) setAllowed(true)
+  }, [allowed, network.type])
+
+  const llm = useLLM({ model: MODEL, preventLoad: !allowed })
   const [loadMs, setLoadMs] = useState<number | null>(null)
   const mountedAt = useRef(Date.now())
 
@@ -43,6 +66,12 @@ export function useOfflineDescriber() {
     if (llm.isReady && loadMs == null) {
       const ms = Date.now() - mountedAt.current
       setLoadMs(ms)
+      try {
+        const flag = downloadedFlag()
+        if (!flag.exists) flag.write('1')
+      } catch {
+        // Without the flag the next launch just waits for Wi-Fi again; not worth failing over.
+      }
     }
   }, [llm.isReady, loadMs])
 
@@ -77,6 +106,8 @@ export function useOfflineDescriber() {
   return {
     describeOffline,
     isReady,
+    /** Not downloaded yet, and not on Wi-Fi: the download is waiting. */
+    waitingForWifi: !allowed,
     downloadProgress: llm.downloadProgress,
     error: llm.error,
     loadMs,

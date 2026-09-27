@@ -1,4 +1,5 @@
 import { File } from 'expo-file-system'
+import { ensureSignedIn, supabase } from './supabase'
 
 /**
  * Phase 5, the "REASONING" tier (PRD section 4): one photo to the backend's
@@ -6,12 +7,22 @@ import { File } from 'expo-file-system'
  * so this is only ever entered because the user asked, never on a timer.
  *
  * Dev default is the laptop over USB (`adb reverse tcp:8787 tcp:8787`, backend
- * `npm run dev`). Set EXPO_PUBLIC_DESCRIBE_URL to the deployed URL for anything else.
- * EXPO_PUBLIC_ values are baked into the app bundle: fine for a URL, and the token is
- * only a speed bump, see backend/src/index.ts.
+ * `npm run dev`). Set EXPO_PUBLIC_DESCRIBE_URL to the deployed URL for anything else;
+ * release builds need HTTPS. The request carries the Supabase user's token, which the
+ * deployed backend verifies (backend/src/index.ts).
  */
 const BASE_URL = process.env.EXPO_PUBLIC_DESCRIBE_URL ?? 'http://localhost:8787'
-const TOKEN = process.env.EXPO_PUBLIC_LUMINA_TOKEN
+
+async function accessToken(): Promise<string | null> {
+  if (supabase == null) return null
+  try {
+    await ensureSignedIn()
+    return (await supabase.auth.getSession()).data.session?.access_token ?? null
+  } catch {
+    // No token means a 401 from a deployed backend, spoken as "Could not describe that".
+    return null
+  }
+}
 
 // A little over the backend's own 15 s upstream timeout, so the backend's clearer
 // error wins when both would fire.
@@ -30,7 +41,7 @@ export class DescribeError extends Error {
  * @throws DescribeError with a sentence fit to speak.
  */
 export async function describeScene(uri: string): Promise<string> {
-  const image = await new File(uri).base64()
+  const [image, token] = await Promise.all([new File(uri).base64(), accessToken()])
 
   let res: Response
   try {
@@ -38,7 +49,7 @@ export async function describeScene(uri: string): Promise<string> {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(TOKEN ? { 'x-lumina-token': TOKEN } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ image }),
       signal: AbortSignal.timeout(TIMEOUT_MS),

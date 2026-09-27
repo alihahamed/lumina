@@ -120,8 +120,11 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
   (`expo-speech-recognition`). Places are CLIP descriptors in Supabase, anonymous users,
   `MATCH_THRESHOLD` 0.85 (a guess). The saved spot matched at 0.92 and an unsaved room was
   not named. Root `.env` holds the Supabase URL and publishable key.
-- **Plugin order in `app.json` matters:** `expo-speech-recognition` must stay before
-  `@reactvision/react-viro`, which overwrites manifest `<queries>`. See `docs/bug.md`.
+- **Release readiness (2026-09-27):** depth model hosted on the GitHub release `models-v1`;
+  backend requires a Supabase JWT when `SUPABASE_URL` is set; Viro and the depth spike are
+  removed; the offline VLM downloads on Wi-Fi only; the debug overlay is hidden in release
+  builds. APK: `npx expo run:android --variant release` (see `SETUP.md` §5). The backend
+  deploy to Vercel is pending a Vercel login.
 - **adb cannot tap on begoniain.** MIUI drops `input tap` silently. Test UI by hand.
 - M7 Supabase migration and M8 Hono `/describe` written, not deployed (`docs/feature.md`).
 
@@ -148,9 +151,7 @@ down with it.
 If it visibly lags underfoot, the next moves are 112px, int8 quantisation, or depth every
 Nth frame holding the last value — options recorded in `docs/decisions.md`.
 
-The model is **adb-pushed**, not shipped: `/data/user/0/com.lumina.app/files/depth140.pte`.
-Reinstalling the app deletes it. Re-push with `run-as com.lumina.app cp` (see
-`src/useDepth.ts`). Export toolchain lives in a scratchpad venv that will be gone; the
+The depth model is hosted on the GitHub release `models-v1` and downloads on first launch. Export toolchain lives in a scratchpad venv that will be gone; the
 recipe and its traps are in `scripts/export_depth.py` and `docs/decisions.md`.
 
 ### Decided, not done (2026-09-27)

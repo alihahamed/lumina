@@ -29,8 +29,7 @@
             "com.google.android.googlequicksearchbox"
           ]
         }
-      ],
-      "@reactvision/react-viro"
+      ]
     ],
     "android": {
       "package": "com.lumina.app",

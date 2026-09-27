@@ -11,7 +11,6 @@ import {
   usePhotoOutput,
 } from 'react-native-vision-camera'
 import { scheduleOnRN } from 'react-native-worklets'
-import DepthSpike from './src/DepthSpike'
 import { zoneDepths } from './src/depthZones'
 import { useDepth } from './src/useDepth'
 import { useOfflineDescriber } from './src/useOfflineDescriber'
@@ -42,6 +41,8 @@ const TARGET_FPS = 8
 const MIN_SCORE = 0.5
 const INPUT_SIZE = 384
 
+const SHOW_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG === '1'
+
 type Busy = 'reading' | 'describing' | 'saving' | 'locating'
 
 type DepthStats = {
@@ -63,8 +64,6 @@ export default function App() {
   // Last depth-driven pattern, so a noisy reading near a threshold does not flip
   // back and forth every frame — see stablePatternForDepth and docs/bug.md 2026-09-27.
   const lastDepthPattern = useRef<PulsePattern>('none')
-  // ponytail: spike toggle, delete with src/DepthSpike.tsx once depth is decided
-  const [spike, setSpike] = useState(false)
 
   const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
   const { runOnFrame, isReady, downloadProgress, error } = detection
@@ -152,7 +151,13 @@ export default function App() {
           try {
             return await describeScene(uri)
           } catch (cloudError) {
-            if (!offline.isReady) throw cloudError
+            if (!offline.isReady) {
+              if (offline.waitingForWifi)
+                throw new DescribeError(
+                  'No connection. Offline description downloads the next time the phone is on Wi-Fi.',
+                )
+              throw cloudError
+            }
             // Minutes of silence would read as a hang; say what is happening.
             alert('No connection. Describing on the phone, this takes a moment.')
             const r = await offline.describeOffline(uri)
@@ -371,16 +376,6 @@ export default function App() {
   // the camera's YUV (or a vendor-private) format and it throws on every frame.
   const frameOutput = useFrameOutput({ pixelFormat: 'rgb', onFrame, onFrameDropped })
 
-  if (spike)
-    return (
-      <DepthSpike
-        onExit={() => setSpike(false)}
-        runOnFrame={runOnFrame}
-        forward={detection.forward}
-        isReady={isReady}
-      />
-    )
-
   if (!hasPermission) {
     return (
       <View style={styles.center}>
@@ -424,8 +419,7 @@ export default function App() {
 
         The overlay is nested inside so touches on the debug text bubble up to here;
         the Camera stays a sibling underneath so its own native touch handling is
-        never in the path. The depth-spike button still wins its own taps — the
-        innermost Pressable gets the touch.
+        never in the path.
 
         ponytail: a palm or thumb brushing the glass while walking will trigger a
         read. Harmless (it just speaks), but if it happens in testing, move reading to
@@ -456,7 +450,9 @@ export default function App() {
           else if (e.nativeEvent.actionName === 'longpress') startListening()
         }}
       >
-      {/* Debug overlay. The real user is blind — this exists for us, not them. */}
+      {/* Debug overlay. The real user is blind — this exists for us, not them. Hidden in
+          release builds unless EXPO_PUBLIC_SHOW_DEBUG=1 (e.g. for the viva demo). */}
+      {SHOW_DEBUG && (
       <View style={styles.overlay} pointerEvents="box-none">
         <Text style={styles.status}>
           {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
@@ -487,22 +483,15 @@ export default function App() {
             ? `offline vlm failed: ${String(offline.error).slice(0, 100)}`
             : offline.isReady
               ? `offline vlm ready · loaded in ${((offline.loadMs ?? 0) / 1000).toFixed(1)} s`
-              : `offline vlm downloading · ${Math.round(offline.downloadProgress * 100)}%`}
+              : offline.waitingForWifi
+                ? 'offline vlm: waiting for Wi-Fi to download'
+                : `offline vlm downloading · ${Math.round(offline.downloadProgress * 100)}%`}
         </Text>
         {lastResult != null && (
           <Text style={styles.detail} numberOfLines={4}>
             last {lastResult}
           </Text>
         )}
-        <Pressable
-          style={styles.spikeButton}
-          onPress={() => setSpike(true)}
-          disabled={!isReady}
-        >
-          <Text style={styles.buttonText}>
-            {isReady ? 'Open depth spike' : 'Open depth spike (wait for model)'}
-          </Text>
-        </Pressable>
         {labels.length === 0 ? (
           <Text style={styles.detail}>nothing detected</Text>
         ) : (
@@ -516,6 +505,7 @@ export default function App() {
           {voice.listening ? 'listening…' : busy != null ? `${busy}…` : 'tap: read text · hold: speak a command'}
         </Text>
       </View>
+      )}
       </Pressable>
     </View>
   )
@@ -550,11 +540,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#2B6CB0',
   },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  spikeButton: {
-    marginTop: 10,
-    paddingVertical: 8,
-    borderRadius: 6,
-    alignItems: 'center',
-    backgroundColor: '#3A3A44',
-  },
 })

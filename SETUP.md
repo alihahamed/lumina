@@ -11,13 +11,11 @@ and no usable depth data, so none of what Lumina does can be tested on it.
 2. **Turn on USB debugging** (Settings → System → Developer options).
    Turn on *Wireless debugging* too if you're on Android 11+, so you aren't tethered
    while walking around.
-3. **Install "Google Play Services for AR"** from the Play Store. This is the ARCore
-   runtime. It sometimes auto-installs on first AR launch; installing it manually
-   avoids a confusing failure later.
-4. **Check your device** against the
-   [ARCore supported devices list](https://developers.google.com/ar/devices).
-   You need **Depth API** support, which is a subset of ARCore support. Do this
-   before writing any code — it determines who on the team can work on M3.
+3. **Make sure the Google app is installed and up to date.** Voice commands use
+   Android's speech recogniser, which is Google's on most phones.
+
+ARCore is **not** needed any more. Depth comes from a model on camera frames, not
+ARCore, and the ARCore spike (Viro) was removed. See `docs/decisions.md`.
 
 You do **not** install the app manually. The CLI builds it and pushes it over.
 
@@ -84,7 +82,35 @@ If native builds fail with **no space left on device** while disk looks fine, ch
 
 ---
 
-## 3. Run it
+## 3. Secrets and config (two `.env` files, both gitignored)
+
+**Root `.env`**, for the app. Values are baked into the app at build time, so only public
+values go here:
+
+```bash
+EXPO_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...    # Settings → API. Public by design
+# EXPO_PUBLIC_DESCRIBE_URL=https://<backend>.vercel.app   # unset = laptop backend over USB
+# EXPO_PUBLIC_SHOW_DEBUG=1                                # debug overlay in release builds
+```
+
+**`backend/.env`**, for the backend only. Copy `backend/.env.example`:
+
+```bash
+GEMINI_API_KEY=...   # https://aistudio.google.com/apikey. Never commit, never paste in chat
+# SUPABASE_URL=...   # set on the deployed backend so only Lumina users can call it
+```
+
+Ask a teammate for the team's values, or set up your own:
+
+**Supabase (once per project).** SQL Editor → run `supabase/migrations/0001_routes_anchors.sql`.
+Authentication → Sign In / Providers → **Allow anonymous sign-ins** → **Save changes**. The
+Save button is easy to miss; without it every place save fails with
+`anonymous_provider_disabled`.
+
+---
+
+## 4. Run it (development)
 
 ```bash
 npm install
@@ -92,10 +118,11 @@ npx expo prebuild --platform android   # generates /android — gitignored
 npx expo run:android                   # phone plugged in, ~10 min the first time
 ```
 
-After that, you almost never rebuild:
+Then every session, in two terminals:
 
 ```bash
-npx expo start --dev-client
+cd backend && npm install && npm run dev   # "what's around me" backend on :8787
+npm run dev                                # adb reverse for 8081 AND 8787, then Metro
 ```
 
 Edit TypeScript, save, the phone reloads in about a second.
@@ -104,7 +131,29 @@ Edit TypeScript, save, the phone reloads in about a second.
 
 ---
 
-## 4. Things that will bite you
+## 5. Build an APK (no laptop needed)
+
+The development build loads its JavaScript from Metro on the laptop, so it will not start
+unplugged. For demos and teammates' phones, build a release APK. It bundles the
+JavaScript, so it needs no Metro or USB:
+
+```bash
+# root .env must have EXPO_PUBLIC_DESCRIBE_URL=https://... (release builds block http://)
+npx expo run:android --variant release
+# APK: android/app/build/outputs/apk/release/app-release.apk
+```
+
+Share the APK file and install it by tapping it, or with `adb install -r app-release.apk`.
+
+- It is signed with the **debug keystore** generated on the machine that built it. That is
+  fine for sideloading, but not the Play Store. APKs from different laptops have different
+  signatures: uninstall before installing one built elsewhere.
+- `EXPO_PUBLIC_` values are read **at build time**. Change the `.env`, rebuild the APK.
+- The debug overlay is hidden in release builds unless built with `EXPO_PUBLIC_SHOW_DEBUG=1`.
+
+---
+
+## 6. Things that will bite you
 
 **Expo Go does not work.** VisionCamera, ExecuTorch and worklets are native modules;
 Expo Go ships a fixed binary that cannot load them. You need the development build
@@ -148,9 +197,22 @@ adb pair <ip:port>     # pairing code shown on the phone
 adb connect <ip:port>
 ```
 
-**First launch downloads the model.** ExecuTorch fetches YOLO26n (~10 MB) from
-Hugging Face and caches it. The first run needs internet and will sit at
-"downloading model" for a moment. It is not hung. Everything after that is offline.
+**First launch downloads the models** and caches them. It needs internet, and it is not
+hung:
+
+| Model | Size | From | When |
+|---|---|---|---|
+| YOLO26n (detection) | ~10 MB | Hugging Face | first launch |
+| Depth Anything V2 (depth) | 99 MB | this repo's GitHub release `models-v1` | first launch |
+| CLIP (place memory) | 96 MB | Hugging Face | first launch |
+| LFM2.5-VL-450M (offline describe) | 649 MB | Hugging Face | **first launch on Wi-Fi only** |
+
+Detection, depth, OCR and offline describe work offline after that. "What's around me"
+(cloud), place memory (Supabase) and voice on Android 11 need internet.
+
+**Xiaomi / MIUI phones ignore `adb shell input tap`** unless Developer options →
+"USB debugging (Security settings)" is on, which needs a Mi account. The command reports
+success anyway. Test taps by hand.
 
 **Permissions.** Camera and microphone prompts fire on first use. If you deny one
 by reflex, Android will not re-prompt — clear app data or reinstall.
@@ -163,10 +225,11 @@ adb logcat -s ReactNativeJS
 
 ---
 
-## 5. Checks
+## 7. Checks
 
 ```bash
-npm test          # rate limiter logic
-npm run typecheck # tsc --noEmit
-npx expo-doctor   # environment and dependency sanity
+npm test                              # 5 pure-logic suites (narration, depth zones, text, commands, place match)
+npm run typecheck                     # tsc --noEmit
+(cd backend && npm run typecheck)
+npx expo-doctor                       # environment and dependency sanity
 ```

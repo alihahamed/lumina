@@ -30,8 +30,8 @@ mod runs after Viro's overwrite. No library patch needed.
 ### How we know
 
 After prebuild, the manifest has both `<queries>` blocks (ARCore and the speech service),
-and voice commands work on begoniain. **Watch for this again:** any future plugin that adds
-`<queries>` must also be listed before Viro.
+and voice commands work on begoniain. **Update:** Viro was later removed entirely (release
+readiness, `docs/decisions.md`), so this trap is gone. Watch for it if ARCore returns.
 
 ## 2026-09-27 — Native SIGSEGV in ExecuTorch during depth inference
 

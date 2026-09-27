@@ -25,7 +25,8 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | Place descriptors | CLIP ViT-B/32 image, int8, via ExecuTorch `useImageEmbeddings` | 512-dim, 96 MB |
 | Speech-to-text | `expo-speech-recognition` (Android SpeechRecognizer) | 57.1.0 |
 | DB | `@supabase/supabase-js` + `react-native-url-polyfill`, anonymous auth | 2.117.2 |
-| AR | `@reactvision/react-viro` → ARCore | spike only, not in the main path |
+| Network type | `expo-network` (Wi-Fi-only offline VLM download) | 57 |
+| Backend auth | `jose` verifies Supabase ES256 JWTs (JWKS) | 6 |
 | Speech | `expo-speech` (system TTS) | SDK 57 |
 | Vibration | `expo-haptics` | SDK 57 |
 | Worklets | `react-native-worklets` + `-vision-camera-worklets` | 5.2.3 |
@@ -45,7 +46,7 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | `src/narrationPolicy.test.ts` | Runs under plain `node`. `npm test` |
 | `src/narrator.ts` | Speaks. Holds the cooldown state |
 | `src/haptics.ts` | Vibrates. Holds the pulse state |
-| `src/useDepth.ts` | Loads the custom depth `.pte` via `SemanticSegmentationModule.fromCustomModel`, exposes `runOnFrame`. Drives haptics as of 2026-09-27; model is adb-pushed, not shipped |
+| `src/useDepth.ts` | Loads the custom depth `.pte` via `SemanticSegmentationModule.fromCustomModel`, exposes `runOnFrame`. Drives haptics. Model hosted on the GitHub release `models-v1`, downloaded on first launch |
 | `src/depthZones.ts` | Depth map to left/centre/right nearest-decile metres. Pure, tested by `depthZones.test.ts` |
 | `scripts/export_depth.py` | Depth Anything V2 Metric-Indoor-Small to XNNPACK `.pte`. Needs its own Python venv, see `docs/decisions.md` 2026-09-26 |
 | `src/commands.ts` | Transcript → command (`describe`, `read`, `save`, `whereami`, `unknown`). Pure, tested |
@@ -58,7 +59,6 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | `src/describe.ts` | Phase 5: base64 still → backend `/describe` → spoken text. Errors are phrased to be spoken |
 | `src/ocr.ts` | On-demand text reading via `@react-native-ml-kit/text-recognition`. See `docs/decisions.md` 2026-09-27 |
 | `backend/`, `supabase/migrations/` | M8 Hono proxy (`src/index.ts`, `gemini-3.5-flash-lite`) with a local runner (`src/dev.ts`, `@hono/node-server`, port 8787), and the M7 schema. Neither is deployed |
-| `src/DepthSpike.tsx` | **Throwaway spike.** ARCore depth + swap timing. Delete when answered |
 | `app.json` | Package id, permissions, `minSdkVersion` 26; iOS bundle id + camera/mic usage strings |
 | `eas.json` | EAS Build profiles (`development` = iOS dev client) |
 | `docs/setup-ios.md` | iPhone install + Metro tunnel (does not replace `SETUP.md`) |

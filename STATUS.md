@@ -116,10 +116,8 @@ reading against a tape measure yet.
   A native crash (SIGSEGV) at reload was traced to a teardown race and fixed (10 reloads
   by hand, no crash, 2026-09-27). See `docs/bug.md`.
 - **On-demand labels:** still-shot → YOLO timing is acceptable when we add a trigger.
-- **Do not** rely on Viro three-ray depth on this phone without a successful re-test.
-
-**If A001 spike shows working `arcore` rays**, revisit ARCore-holds-camera for that device
-only; begoniain may remain on the VisionCamera depth-model path.
+- The ARCore / Viro spike is **removed** (2026-09-27). Its findings stay in
+  `docs/depth-spike-session.md`. ARCore returns only if guidance between places is built.
 
 ### Spike checklist (begoniain)
 
@@ -134,8 +132,7 @@ only; begoniain may remain on the VisionCamera depth-model path.
 **Next:** check depth readings against real, measured distances (tape measure, a doorway,
 a glass door). If the ~435 ms/frame combined latency is felt while walking, revisit speed
 (112px, int8 quantisation, depth every Nth frame) — see `docs/decisions.md` 2026-09-27.
-`DepthSpike.tsx` (the ARCore ray spike, now superseded) stays until the team deletes it by
-policy.
+
 
 ---
 

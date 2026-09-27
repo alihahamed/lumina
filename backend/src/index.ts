@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 
 // One job: keep GEMINI_API_KEY off the phone. See PRD.md sections 4-5.
 //
@@ -33,24 +34,55 @@ type Env = {
   GEMINI_API_KEY?: string
   GEMINI_MODEL?: string
   GEMINI_FALLBACK_MODEL?: string
-  LUMINA_APP_TOKEN?: string
+  SUPABASE_URL?: string
 }
 
 // Vercel and plain Node expose env on process.env, Workers on c.env. Support both.
 const envOf = (env: Env | undefined, name: keyof Env): string | undefined =>
   env?.[name] ?? process.env[name]
 
+// Supabase signs user tokens with ES256 and publishes the public keys, so tokens are
+// verified here with no call to Supabase per request and no shared secret. jose caches
+// the key set. One per Supabase URL (there is only ever one).
+const jwksFor = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
+function jwks(supabaseUrl: string) {
+  let set = jwksFor.get(supabaseUrl)
+  if (set == null) {
+    set = createRemoteJWKSet(new URL(`${supabaseUrl}/auth/v1/.well-known/jwks.json`))
+    jwksFor.set(supabaseUrl, set)
+  }
+  return set
+}
+
+/** The Supabase user id if the bearer token is valid, else null. */
+async function verifiedUser(supabaseUrl: string, authorization: string | undefined) {
+  const token = authorization?.match(/^Bearer (.+)$/)?.[1]
+  if (token == null) return null
+  try {
+    const { payload } = await jwtVerify(token, jwks(supabaseUrl), {
+      issuer: `${supabaseUrl}/auth/v1`,
+      audience: 'authenticated',
+    })
+    return typeof payload.sub === 'string' ? payload.sub : null
+  } catch {
+    return null
+  }
+}
+
 const app = new Hono<{ Bindings: Env }>()
 
 app.get('/health', (c) => c.json({ ok: true }))
 
 app.post('/describe', async (c) => {
-  // ponytail: a shared token baked into the app bundle. It stops a leaked URL being
-  // used by strangers, not a determined attacker who unpacks the APK. Replace with a
-  // Supabase JWT check and a per-user limit once auth exists (M7).
-  const token = envOf(c.env, 'LUMINA_APP_TOKEN')
-  if (token && c.req.header('x-lumina-token') !== token) {
-    return c.json({ error: 'unauthorized' }, 401)
+  // Only signed-in Lumina users (the app signs in anonymously, Phase 6). With
+  // SUPABASE_URL unset the check is off — local development only; the deployed backend
+  // must set it. ponytail: no per-user rate limit. Anyone can mint anonymous users
+  // with the public key, but Supabase rate-limits anonymous sign-ups per IP, which
+  // bounds that. Add a per-user daily cap (a Supabase table) if the free tier is abused.
+  const supabaseUrl = envOf(c.env, 'SUPABASE_URL')
+  if (supabaseUrl) {
+    const user = await verifiedUser(supabaseUrl, c.req.header('authorization'))
+    if (user == null) return c.json({ error: 'unauthorized' }, 401)
   }
 
   const body = await c.req.json<{ image?: unknown }>().catch(() => null)

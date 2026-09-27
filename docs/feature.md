@@ -108,7 +108,7 @@ adb reverse tcp:8787 tcp:8787
 ```
 
 The app defaults to `http://localhost:8787`. For a deployed backend, set
-`EXPO_PUBLIC_DESCRIBE_URL` (and `EXPO_PUBLIC_LUMINA_TOKEN` if the server sets one) in a
+`EXPO_PUBLIC_DESCRIBE_URL` (the app sends the Supabase user's token; the deployed backend checks it) in a
 root `.env`, then restart Metro. `EXPO_PUBLIC_` values are baked in at bundle time.
 
 ### Shortcuts, on purpose
