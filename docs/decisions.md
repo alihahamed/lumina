@@ -45,8 +45,13 @@ they sit inside walls.
 (21 VOC classes, no wall). Guessing "wall" from depth shape alone was also rejected: a
 wardrobe looks the same.
 
-**Not yet measured on the phone:** SegFormer's latency, and how often it names things
-correctly in real rooms. Glass doors are the known weak spot.
+**Measured on the phone (2026-09-27):** naming takes 1.7–2.5 s including the photo capture,
+~4x the estimate. Walls and doors were named in a walk test. **Open:** split capture from
+inference, and check whether the first "Stop" gets the name in time. Glass doors are
+untested.
+
+**Debug overlay toggle:** "show logs" / "hide logs" by voice, for the viva. A sighted demo
+and a blind user can use one APK. It starts from `EXPO_PUBLIC_SHOW_DEBUG`.
 
 ## 2026-09-27 — Release readiness: hosted depth model, JWT auth, no Viro
 

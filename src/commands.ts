@@ -7,6 +7,8 @@ export type Command =
   | { kind: 'read' }
   | { kind: 'save'; label: string }
   | { kind: 'whereami' }
+  | { kind: 'showLogs' }
+  | { kind: 'hideLogs' }
   | { kind: 'unknown'; heard: string }
 
 /** Lowercase, straight apostrophes, no punctuation, no wake word or politeness. */
@@ -30,6 +32,10 @@ const WHERE = /^(?:where am i|where is this|what place is this|which place is th
 const DESCRIBE =
   /^(?:what's|what is|whats) (?:around|in front of|near) (?:me|us)$|^(?:describe(?: this| the scene| it)?|what do you see|look(?: around)?|what's here|what is here)$/
 const READ = /^read(?: this| that| it| text| the text| the sign)?$/
+// The on-screen debug overlay, for demos to sighted people (the viva). Blind users never
+// need it, so it is off by default in release builds.
+const SHOW_LOGS = /^(?:show|turn on|open) (?:the )?(?:logs?|debug)(?: screen| overlay)?$/
+const HIDE_LOGS = /^(?:hide|turn off|close) (?:the )?(?:logs?|debug)(?: screen| overlay)?$/
 
 export function parseCommand(heard: string): Command {
   const said = normalise(heard)
@@ -38,6 +44,8 @@ export function parseCommand(heard: string): Command {
   if (WHERE.test(said)) return { kind: 'whereami' }
   if (DESCRIBE.test(said)) return { kind: 'describe' }
   if (READ.test(said)) return { kind: 'read' }
+  if (SHOW_LOGS.test(said)) return { kind: 'showLogs' }
+  if (HIDE_LOGS.test(said)) return { kind: 'hideLogs' }
   const save = SAVE.exec(said)
   if (save != null) {
     const label = save[1].trim()

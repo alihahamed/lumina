@@ -178,6 +178,7 @@ Share the APK file and install it by tapping it, or with `adb install -r app-rel
   places. Linking an account to keep places across reinstalls is not built.
 - `EXPO_PUBLIC_` values are read **at build time**. Change the `.env`, rebuild the APK.
 - The debug overlay is hidden in release builds unless built with `EXPO_PUBLIC_SHOW_DEBUG=1`.
+  Either way, hold and say **"show logs"** or **"hide logs"** to toggle it at runtime.
 
 ---
 

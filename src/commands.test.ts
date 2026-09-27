@@ -19,6 +19,10 @@ for (const s of ['Where am I?', 'where is this', 'What place is this'])
 // --- read
 for (const s of ['read', 'Read this', 'read the sign']) assert.equal(kind(s), 'read', s)
 
+// --- debug overlay toggle
+for (const s of ['show logs', 'Show the debug screen', 'turn on debug']) assert.equal(kind(s), 'showLogs', s)
+for (const s of ['hide logs', 'turn off the debug overlay', 'close logs']) assert.equal(kind(s), 'hideLogs', s)
+
 // --- save, and what gets remembered
 assert.equal(label('Save this as the library door'), 'the library door')
 assert.equal(label('remember this place as my desk'), 'my desk')

@@ -104,15 +104,18 @@ overlay exists so you can check the heuristic against reality — watch it while
 - [ ] A wall-mounted sign should read as far away, not close
 
 ### Spoken "stop" and scene names (2026-09-27)
-- [ ] Walk at normal pace toward a wall: "Stop. Wall right in front of you." **before**
-      contact. Measure the distance at which it starts speaking
-- [ ] Walk toward a closed door: "door ahead" around 1.5 m, then "Stop. Door…"
+- [x] Walk test toward walls and doors reported okay by hand (2026-09-27, begoniain). The
+      log named "door" and "wall" repeatedly, **1.7–2.5 s per naming**
+- [ ] Measure the distance at which "Stop" starts speaking, at normal walking pace
+- [ ] Does the **first** "Stop" already say "wall"/"door"? Naming takes ~2 s, so it may
+      say "something" first and the name only on the repeat
 - [ ] Stairs going down, and going up: "stairs ahead" (with a spotter!)
 - [ ] A glass door: what does it say? (the known weak spot)
 - [ ] Standing still facing a wall: repeats every ~4 s, not constantly
 - [ ] A person standing in front of a wall: says "person", not "wall"
 - [ ] No shutter sound while walking near things
-- [ ] Log `scene ahead … ms`: record SegFormer's time on the phone here
+- [x] SegFormer on the phone, photo capture included: **1.7–2.5 s** (2026-09-27). Slower than
+      the ~0.5 s estimated; split capture from inference before optimising
 
 ### Blindfold test — required before phase 3 counts as done
 - [ ] Can you avoid a chair using haptics alone, with the screen off and sound muted?

@@ -7,8 +7,10 @@ can pick it up cold. Newest first.
 
 ## 2026-09-27 — "Stop" warning and naming walls, doors and stairs
 
-**Status:** built, tested in logic (6 suites), export verified exactly. APK built (203.9 MB).
-**Not yet tried on the phone.**
+**Status:** **working on the phone** (2026-09-27). The walk test was reported okay, and the log
+named doors and walls. Naming takes 1.7–2.5 s (capture included), so the first "Stop" may
+still say "something". The debug overlay shows the scene name and last warning; say "show
+logs" or "hide logs" to toggle it.
 **Files:** `src/narrationPolicy.ts` (`tooCloseWarning`, thresholds), `src/sceneNames.ts`
 (+test), `src/useSegmenter.ts`, `src/ade20kLabels.ts` (generated),
 `scripts/export_segformer.py`, `App.tsx` (`publish`: naming trigger, warning, landmarks).

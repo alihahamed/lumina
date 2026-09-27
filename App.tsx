@@ -45,6 +45,7 @@ const TARGET_FPS = 8
 const MIN_SCORE = 0.5
 const INPUT_SIZE = 384
 
+// Starting state of the debug overlay; "show logs" / "hide logs" toggles it at runtime.
 const SHOW_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG === '1'
 
 // Naming what is ahead (wall, door, stairs) runs only when depth says something is
@@ -93,6 +94,11 @@ export default function App() {
   const [busy, setBusy] = useState<Busy | null>(null)
   const busyRef = useRef<Busy | null>(null)
   busyRef.current = busy
+  // Debug overlay, for demos to sighted people. Off in release unless the build or a
+  // "show logs" voice command turns it on.
+  const [showDebug, setShowDebug] = useState(SHOW_DEBUG)
+  const [sceneStat, setSceneStat] = useState<{ name: SceneName | null; ms: number } | null>(null)
+  const [lastWarning, setLastWarning] = useState<string | null>(null)
 
   // Scene naming (wall / door / stairs): a silent still, segmented off the frame loop.
   const segmenter = useSegmenter()
@@ -109,6 +115,7 @@ export default function App() {
       uri = file.filePath.startsWith('file://') ? file.filePath : `file://${file.filePath}`
       const name = await segmenter.nameFromPhoto(uri)
       sceneName.current = { name, at: Date.now() }
+      setSceneStat({ name, ms: Date.now() - t0 })
       console.log('scene ahead', name, Date.now() - t0, 'ms')
     } catch (e) {
       console.warn('scene naming failed', e)
@@ -270,6 +277,12 @@ export default function App() {
           return void saveNow(cmd.label)
         case 'whereami':
           return void whereNow()
+        case 'showLogs':
+          setShowDebug(true)
+          return alert('Logs shown.')
+        case 'hideLogs':
+          setShowDebug(false)
+          return alert('Logs hidden.')
         case 'unknown':
           return alert(
             heard.trim() === ''
@@ -370,7 +383,11 @@ export default function App() {
       const ahead = nearestInPath(candidates)
       const aheadName = ahead != null ? ahead.key.split('|')[0] : null
       const warning = tooCloseWarning(thisPattern, aheadName ?? scene, closeWarning.current, now)
-      if (warning != null) alert(warning)
+      if (warning != null) {
+        alert(warning)
+        setLastWarning(warning)
+        console.log('warning', warning)
+      }
 
       // Doors and stairs are landmarks as well as obstacles: announce them like any
       // detected object, with the same cooldowns. Walls are everywhere, so not them.
@@ -531,7 +548,7 @@ export default function App() {
       >
       {/* Debug overlay. The real user is blind — this exists for us, not them. Hidden in
           release builds unless EXPO_PUBLIC_SHOW_DEBUG=1 (e.g. for the viva demo). */}
-      {SHOW_DEBUG && (
+      {showDebug && (
       <View style={styles.overlay} pointerEvents="box-none">
         <Text style={styles.status}>
           {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
@@ -566,6 +583,16 @@ export default function App() {
                 ? 'offline vlm: waiting for Wi-Fi to download'
                 : `offline vlm downloading · ${Math.round(offline.downloadProgress * 100)}%`}
         </Text>
+        <Text style={styles.detail}>
+          {sceneStat == null
+            ? `scene: ${segmenter.isReady ? 'waits until something is within 1.6 m' : 'loading…'}`
+            : `scene ahead: ${sceneStat.name ?? 'nothing clear'} · ${(sceneStat.ms / 1000).toFixed(1)} s`}
+        </Text>
+        {lastWarning != null && (
+          <Text style={styles.warning} numberOfLines={2}>
+            last warning: {lastWarning}
+          </Text>
+        )}
         {lastResult != null && (
           <Text style={styles.detail} numberOfLines={4}>
             last {lastResult}
@@ -611,6 +638,7 @@ const styles = StyleSheet.create({
   status: { color: '#F5F5F7', fontSize: 16, fontWeight: '600' },
   detail: { color: '#9A9AA5', fontSize: 13, marginTop: 4 },
   label: { color: '#7FD1AE', fontSize: 15, marginTop: 2 },
+  warning: { color: '#FFB86B', fontSize: 14, fontWeight: '600', marginTop: 4 },
   button: {
     marginTop: 16,
     paddingHorizontal: 20,

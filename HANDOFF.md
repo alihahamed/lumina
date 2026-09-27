@@ -125,6 +125,9 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
   removed; the offline VLM downloads on Wi-Fi only; the debug overlay is hidden in release
   builds. APK: `npx expo run:android --variant release` (see `SETUP.md` §5). The backend is
   deployed at `https://lumina-backend-pink.vercel.app` (Vercel account `derzzzhenry-4646`).
+- **Spoken "stop" + wall/door/stairs names** (SegFormer, off the frame loop) work on the
+  phone. Naming is 1.7–2.5 s, the next thing to speed up. The debug overlay toggles by voice
+  ("show logs" / "hide logs"); the demo APK is built with it on.
 - **adb cannot tap on begoniain.** MIUI drops `input tap` silently. Test UI by hand.
 - M7 Supabase migration and M8 Hono `/describe` written, not deployed (`docs/feature.md`).
 
