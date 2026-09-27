@@ -111,10 +111,8 @@ reading against a tape measure yet.
   while the model is loading or a frame errors.
   **Accuracy against real distances is unconfirmed** — this is the next thing to check,
   not more speed work, unless the combined latency turns out to be felt underfoot.
-  **A native crash (SIGSEGV) happened once in the depth path on relaunch, root cause
-  unconfirmed** — see `docs/bug.md` 2026-09-27. Ran crash-free for several minutes
-  otherwise, but this is not something a JS try/catch can protect against. Do not treat
-  as stable enough to demo or hand to a test user until this is understood.
+  A native crash (SIGSEGV) at reload was traced to a teardown race and fixed (10 reloads
+  by hand, no crash, 2026-09-27). See `docs/bug.md`.
 - **On-demand labels:** still-shot → YOLO timing is acceptable when we add a trigger.
 - **Do not** rely on Viro three-ray depth on this phone without a successful re-test.
 
@@ -160,7 +158,7 @@ policy.
 |---|---|---|
 | 1 | Camera + speech | done |
 | 2 | Object detection + narration | done, on device |
-| 3 | Obstacle warning via vibration | depth wired to haptics on begoniain (2026-09-27); **accuracy unconfirmed, and a native crash was seen once**, see section 5 |
+| 3 | Obstacle warning via vibration | depth wired to haptics on begoniain (2026-09-27); **accuracy unconfirmed**, see section 5 |
 | 4 | Read signs and room numbers on demand (ML Kit, offline, free) | **working on device** (read a book, 2026-09-27); tap-anywhere trigger, checklist open |
 | 5 | "What's around me?" via cloud VLM (Gemini free tier) | built; backend answers in 2–4 s via Gemini 3.1 Flash-Lite (3.5 fallback). **works on the phone** (2026-09-27) |
 | 6 | Save and recall routes | schema written, not deployed (`supabase/migrations/`) |

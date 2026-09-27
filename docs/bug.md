@@ -4,7 +4,8 @@ A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
 ## 2026-09-27 — Native SIGSEGV in ExecuTorch during depth inference
 
-**Status:** mitigated, not proven fixed. **Two occurrences, both during a reload/relaunch.**  
+**Status:** fixed for reloads. **10 reloads by hand, no crash** (2026-09-27), after two
+crashes during reloads before the fix. The full JS-runtime-teardown case is still unguarded (see below).  
 **Files:** `src/useDepth.ts` (the custom segmentation path), native library only
 
 ### Symptom
@@ -52,9 +53,8 @@ depth, and only calls `delete()` after `DELETE_GRACE_MS` (1.5 s, longer than any
 call). **This covers unmount and Fast Refresh, not a full JS runtime teardown**, where the
 timer never fires. That case needs a native-side guard in the library. `ponytail:` at the site.
 
-**How we will know:** reload the app many times over while it runs (edit and save any JS
-file) and grep logcat for `Fatal signal`. Not done yet. Until then, treat it as mitigated,
-not fixed. It has **never** been seen during steady running, only at reload.
+**How we know:** a teammate reloaded the app 10 times after the fix with no crash
+(2026-09-27). It has **never** been seen during steady running, only at reload.
 
 ### What is NOT confirmed
 

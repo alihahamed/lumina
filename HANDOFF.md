@@ -125,8 +125,8 @@ doorway or wall at a known distance and check the overlay's L/C/R numbers, and c
 walking toward a wall actually escalates far → near → imminent.
 
 **Update:** a second crash, and both hit the process being torn down by a reload. The
-likely cause is a teardown race. `useDepth` now defers `delete()` by 1.5 s. This is
-mitigated, not proven fixed. See `docs/bug.md`.
+cause was a teardown race. `useDepth` now defers `delete()` by 1.5 s. **10 reloads by hand
+afterwards, no crash.** See `docs/bug.md`.
 
 **Original note — a native crash happened once, on a relaunch, in the depth path** — `SIGSEGV` inside
 ExecuTorch's `Method::outputs_size()`, called from the custom segmentation `execute()`.
@@ -146,8 +146,18 @@ Reinstalling the app deletes it. Re-push with `run-as com.lumina.app cp` (see
 `src/useDepth.ts`). Export toolchain lives in a scratchpad venv that will be gone; the
 recipe and its traps are in `scripts/export_depth.py` and `docs/decisions.md`.
 
+### Decided, not done (2026-09-27)
+
+- **Gemini key:** it appeared in a chat transcript. The owner chose not to rotate it
+  (free tier, no billing). Rotate it if usage looks odd in AI Studio.
+- **Backend deploy:** deferred until someone needs describe away from the laptop. It runs
+  locally (`cd backend && npm run dev`). Add real auth before deploying.
+- **Phase 6 gesture:** hold becomes **hold-and-speak voice commands** ("what's around me",
+  "save this as …", "where am I"). Tap stays as read-text. Chosen over adding another
+  gesture, which clashes with TalkBack and does not scale.
+
 ### Unverified
 
-Depth accuracy against ground truth. Whether the SIGSEGV recurs. Cadence and blindfold
+Depth accuracy against ground truth. Cadence and blindfold
 tests, battery and heat. `/describe` against live Gemini, the SQL against real Postgres.
 Nothing committed.
