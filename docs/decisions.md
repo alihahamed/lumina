@@ -7,6 +7,47 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-09-27 — Spoken "stop", thresholds from latency, and naming walls/doors/stairs
+
+**The too-close warning is spoken now, not only felt** (`tooCloseWarning`,
+`narrationPolicy.ts`). "Stop. Chair right in front of you." It speaks on entering the
+imminent zone, repeats every 4 s while there, re-arms on backing off, and interrupts
+anything being said.
+
+**`DEPTH_IMMINENT_M` 0.6 → 1.0 m, `DEPTH_NEAR_M` 1.2 → 1.6 m, set from latency.** A depth
+result is ~0.45 s old when it lands, and speech takes ~0.2 s to start. At ~1.2 m/s walking
+that is ~0.8 m travelled, so a warning at 0.6 m arrived after impact. 1.0 m leaves ~0.2 m.
+Faster depth, not a bigger number, is the real fix.
+
+**Walls, doors and stairs are named by SegFormer-B0 (ADE20K, 150 classes).** YOLO's COCO
+classes have no wall, door or stairs. COCO's 91-id list has a "door" id, but it was never
+annotated, so no COCO model finds doors. SegFormer labels every pixel. `nameAhead`
+(`src/sceneNames.ts`) takes the centre region and applies ordered rules: stairs ≥10%,
+door ≥15%, railing, window, wall ≥40%. Hazards and landmarks come before walls because
+they sit inside walls.
+
+- **512 px, not 256.** On two public test photos, a door filling the view was 10% "door"
+  at 256 and **42%** at 512. Wooden doors read as "wardrobe" at 256 (24%) but "door" at
+  512 (66%). Walls were fine at either size.
+- **Off the frame loop.** 512 is ~4x the work, and in the camera worklet it would stall
+  depth and haptics exactly when the user is close. Instead, when depth says near or
+  imminent, a silent still (`enableShutterSound: false`) is segmented through
+  `forward()` on ExecuTorch's own thread, at most every 2 s. A name is trusted for 3 s.
+  Near starts at 1.6 m, so the name is normally ready before the 1 m "stop".
+- **Detection's name wins over the scene's** (a person in front of a wall is a person).
+  "Door ahead" and "stairs ahead" are also narrated as landmarks; walls are not.
+- Exported exactly (100% argmax agreement with PyTorch). Bundled in the APK like depth.
+- **Licence: NVIDIA Source Code License, non-commercial (research or evaluation) only.**
+  Fine for this project, like YOLO's AGPL. The swap if that ever changes is
+  EfficientViT-Seg (Apache-2.0, also ADE20K).
+
+**Rejected:** RF-DETR and SSDLite (COCO, no real "door"), and DeepLab, LRASPP and FCN
+(21 VOC classes, no wall). Guessing "wall" from depth shape alone was also rejected: a
+wardrobe looks the same.
+
+**Not yet measured on the phone:** SegFormer's latency, and how often it names things
+correctly in real rooms. Glass doors are the known weak spot.
+
 ## 2026-09-27 — Release readiness: hosted depth model, JWT auth, no Viro
 
 So the app works off the laptop and on phones other than begoniain.

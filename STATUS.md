@@ -42,6 +42,11 @@ Detail: [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
 ## 3. What does not work yet
 
+**Update 2026-09-27:** walls, doors and stairs are now *named* (SegFormer, see
+`docs/decisions.md`), and "too close" is spoken, not only felt. Both are untested on the
+phone. The paragraph below is the older state.
+
+
 Be honest about this in the report. It is the gap that matters:
 
 **The app cannot yet be *trusted* to see walls, glass doors, steps, or doorways.**

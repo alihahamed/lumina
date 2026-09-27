@@ -28,3 +28,8 @@ fetch \
   https://github.com/alihahamed/lumina/releases/download/models-v1/depth_anything_v2_metric_indoor_small_140.pte \
   assets/models/depth_anything_v2_metric_indoor_small_140.pte \
   059022a3ae1930310848dbdfabb88be6eacabdd8a7480e47db2767989660acc0
+
+fetch \
+  https://github.com/alihahamed/lumina/releases/download/models-v1/segformer_b0_ade20k_512.pte \
+  assets/models/segformer_b0_ade20k_512.pte \
+  ec11dbb4262d7b1254efc206117ff035047ff83c0a8e110a5c5e30c0b8ef5d9e

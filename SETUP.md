@@ -114,7 +114,7 @@ Save button is easy to miss; without it every place save fails with
 
 ```bash
 npm install
-npm run fetch-models                   # 99 MB depth model into assets/models/ — gitignored
+npm run fetch-models                   # depth (99 MB) + SegFormer (15 MB) into assets/models/ — gitignored
 npx expo prebuild --platform android   # generates /android — gitignored
 npx expo run:android                   # phone plugged in, ~10 min the first time
 ```
@@ -164,7 +164,7 @@ cd android && ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8
 ```
 
 `arm64-v8a` only: every current phone, and ExecuTorch does not support 32-bit ARM anyway.
-arm64-v8a alone is 188.6 MB, 99 MB of which is the bundled depth model; all four architectures would add ~140 MB. `npx expo run:android --variant release` also
+arm64-v8a alone is 203.9 MB, 114 MB of which is the two bundled models; all four architectures would add ~140 MB. `npx expo run:android --variant release` also
 works and installs on a plugged-in phone, but builds every architecture.
 
 Share the APK file and install it by tapping it, or with `adb install -r app-release.apk`.
@@ -232,6 +232,7 @@ hung:
 |---|---|---|---|
 | YOLO26n (detection) | ~10 MB | Hugging Face | first launch |
 | Depth Anything V2 (depth) | 99 MB | **inside the app** (`npm run fetch-models` before building) | never |
+| SegFormer-B0 (wall/door/stairs) | 15 MB | **inside the app** (same) | never |
 | CLIP (place memory) | 96 MB | Hugging Face | first launch |
 | LFM2.5-VL-450M (offline describe) | 649 MB | Hugging Face | **first launch on Wi-Fi only** |
 

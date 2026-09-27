@@ -11,6 +11,8 @@ import {
   patternFor,
   patternForDepth,
   stablePatternForDepth,
+  tooCloseWarning,
+  TOO_CLOSE_REPEAT_MS,
   DEPTH_IMMINENT_M,
   DEPTH_NEAR_M,
   DEPTH_FAR_M,
@@ -229,7 +231,7 @@ assert.equal(patternForDepth(0), 'imminent', 'touching the lens is still imminen
   // Coming from 'none', staying just below the raw boundary must NOT flip to 'far'.
   assert.equal(stablePatternForDepth(justBelow, 'none'), 'none', 'noise must not flip none -> far')
   // But a real change, well past the widened boundary, still gets through.
-  assert.equal(stablePatternForDepth(DEPTH_FAR_M - 1, 'none'), 'far', 'a real approach is not stuck')
+  assert.equal(stablePatternForDepth((DEPTH_NEAR_M + DEPTH_FAR_M) / 2, 'none'), 'far', 'a real approach is not stuck')
   assert.equal(stablePatternForDepth(DEPTH_FAR_M + 1, 'far'), 'none', 'a real retreat is not stuck')
 }
 // Same idea at the near/imminent boundary.
@@ -244,5 +246,21 @@ assert.equal(patternForDepth(0), 'imminent', 'touching the lens is still imminen
 // No previous reading yet: behaves like the plain lookup, biased to not over-warn.
 assert.equal(stablePatternForDepth(5, 'none'), 'none')
 assert.equal(stablePatternForDepth(0.1, 'none'), 'imminent')
+
+// --- spoken too-close warning -------------------------------------------------
+{
+  const st = { active: false, lastAt: 0 }
+  assert.equal(tooCloseWarning('near', 'chair', st, 0), null, 'not imminent: silent')
+  assert.equal(tooCloseWarning('imminent', 'chair', st, 1000), 'Stop. chair right in front of you.')
+  assert.equal(tooCloseWarning('imminent', 'chair', st, 2000), null, 'still close: no repeat yet')
+  assert.equal(
+    tooCloseWarning('imminent', 'chair', st, 1000 + TOO_CLOSE_REPEAT_MS),
+    'Stop. chair right in front of you.',
+    'still close after the repeat interval: say it again',
+  )
+  assert.equal(tooCloseWarning('far', null, st, 6000), null, 'backed off: re-arms')
+  assert.equal(tooCloseWarning('imminent', null, st, 6100), 'Stop. Something right in front of you.',
+    're-entering speaks at once, and without a name says "something"')
+}
 
 console.log('narrationPolicy: all checks passed')

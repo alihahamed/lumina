@@ -14,11 +14,15 @@ import { scheduleOnRN } from 'react-native-worklets'
 import { zoneDepths } from './src/depthZones'
 import { useDepth } from './src/useDepth'
 import { useOfflineDescriber } from './src/useOfflineDescriber'
+import { useSegmenter } from './src/useSegmenter'
+import type { SceneName } from './src/sceneNames'
 import { pulseFor, resetHaptics } from './src/haptics'
 import {
   nearestInPath,
   patternFor,
   stablePatternForDepth,
+  tooCloseWarning,
+  type CloseWarning,
   toCandidates,
   type Detected,
   type PulsePattern,
@@ -43,6 +47,11 @@ const INPUT_SIZE = 384
 
 const SHOW_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG === '1'
 
+// Naming what is ahead (wall, door, stairs) runs only when depth says something is
+// within reach, at most this often, and a name is trusted for this long.
+const NAME_EVERY_MS = 2000
+const NAME_FRESH_MS = 3000
+
 type Busy = 'reading' | 'describing' | 'saving' | 'locating'
 
 type DepthStats = {
@@ -64,6 +73,8 @@ export default function App() {
   // Last depth-driven pattern, so a noisy reading near a threshold does not flip
   // back and forth every frame — see stablePatternForDepth and docs/bug.md 2026-09-27.
   const lastDepthPattern = useRef<PulsePattern>('none')
+  // Spoken "stop" state, so it speaks on arrival and repeats only every few seconds.
+  const closeWarning = useRef<CloseWarning>({ active: false, lastAt: 0 })
 
   const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
   const { runOnFrame, isReady, downloadProgress, error } = detection
@@ -80,6 +91,41 @@ export default function App() {
   const offline = useOfflineDescriber()
   // One on-demand request at a time: OCR and describe share the one photo output.
   const [busy, setBusy] = useState<Busy | null>(null)
+  const busyRef = useRef<Busy | null>(null)
+  busyRef.current = busy
+
+  // Scene naming (wall / door / stairs): a silent still, segmented off the frame loop.
+  const segmenter = useSegmenter()
+  const sceneName = useRef<{ name: SceneName | null; at: number } | null>(null)
+  const naming = useRef<Promise<void> | null>(null)
+  const lastNamingAt = useRef(0)
+  const nameAheadNow = async () => {
+    if (!segmenter.isReady) return
+    const t0 = Date.now()
+    let uri: string | null = null
+    try {
+      // No shutter sound: this fires every couple of seconds near obstacles.
+      const file = await photoOutput.capturePhotoToFile({ enableShutterSound: false }, {})
+      uri = file.filePath.startsWith('file://') ? file.filePath : `file://${file.filePath}`
+      const name = await segmenter.nameFromPhoto(uri)
+      sceneName.current = { name, at: Date.now() }
+      console.log('scene ahead', name, Date.now() - t0, 'ms')
+    } catch (e) {
+      console.warn('scene naming failed', e)
+    } finally {
+      if (uri != null) {
+        try {
+          new File(uri).delete()
+        } catch {
+          // best-effort cleanup
+        }
+      }
+    }
+  }
+  // `publish` has no deps (it runs per frame from the worklet), so it reaches the latest
+  // closure through a ref rather than a stale one.
+  const nameAheadRef = useRef(nameAheadNow)
+  nameAheadRef.current = nameAheadNow
   // Debug only, like depthStats — lets us confirm a result without needing to hear
   // the phone's TTS. ponytail: delete once both have been verified a few times.
   const [lastResult, setLastResult] = useState<string | null>(null)
@@ -100,6 +146,8 @@ export default function App() {
       alert(start)
       let uri: string | null = null
       try {
+        // A background scene-naming still may be mid-capture; one capture at a time.
+        await naming.current
         const file = await photoOutput.capturePhotoToFile({}, {})
         uri = file.filePath.startsWith('file://') ? file.filePath : `file://${file.filePath}`
         const spoken = await work(uri)
@@ -298,6 +346,37 @@ export default function App() {
         setProximityLabel(path != null ? `${path.proximity.toFixed(2)} (bbox)` : '0.00 (bbox)')
       }
       setPattern(pulseFor(thisPattern))
+
+      // Something within reach: find out what it is, in the background, so the name is
+      // ready before the "stop" at 1 m. Never while an on-demand request owns the camera.
+      const now = Date.now()
+      if (
+        (thisPattern === 'near' || thisPattern === 'imminent') &&
+        naming.current == null &&
+        busyRef.current == null &&
+        now - lastNamingAt.current > NAME_EVERY_MS
+      ) {
+        lastNamingAt.current = now
+        naming.current = nameAheadRef.current().finally(() => {
+          naming.current = null
+        })
+      }
+      const scene =
+        sceneName.current != null && now - sceneName.current.at < NAME_FRESH_MS ? sceneName.current.name : null
+
+      // Too close: say so, and what it is. Detection's name first (a person in front of
+      // a wall is a person), then the scene's. Interrupts narration and any read-out —
+      // this is the one message that must never wait.
+      const ahead = nearestInPath(candidates)
+      const aheadName = ahead != null ? ahead.key.split('|')[0] : null
+      const warning = tooCloseWarning(thisPattern, aheadName ?? scene, closeWarning.current, now)
+      if (warning != null) alert(warning)
+
+      // Doors and stairs are landmarks as well as obstacles: announce them like any
+      // detected object, with the same cooldowns. Walls are everywhere, so not them.
+      if (scene === 'door' || scene === 'stairs') {
+        candidates.push({ key: `${scene}|ahead`, text: `${scene} ahead`, score: 1, zone: 'ahead', proximity: 0 })
+      }
       setDepthStats({ yoloMs, depthMs, zones: depthZones, error: depthError })
 
       narrate(candidates)

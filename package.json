@@ -36,7 +36,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "node src/narrationPolicy.test.ts && node src/depthZones.test.ts && node src/text.test.ts && node src/commands.test.ts && node src/placeMatch.test.ts",
+    "test": "node src/narrationPolicy.test.ts && node src/depthZones.test.ts && node src/text.test.ts && node src/commands.test.ts && node src/placeMatch.test.ts && node src/sceneNames.test.ts",
     "typecheck": "tsc --noEmit",
     "dev": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8787 tcp:8787 && expo start --dev-client --localhost",
     "dev:ios": "expo start --dev-client --tunnel",

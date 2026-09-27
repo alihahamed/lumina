@@ -151,12 +151,47 @@ export function patternFor(proximity: number): PulsePattern {
 /**
  * Depth-driven thresholds, in metres of the nearest thing straight ahead.
  *
- * Guesses, like every other constant here — nobody has walked a corridor with these
- * numbers yet. See HANDOFF.md working agreements and `docs/decisions.md` 2026-09-27.
+ * Still guesses — nobody has walked a corridor with them — but IMMINENT is set from the
+ * pipeline's latency, not picked. A depth result is ~0.45 s old when it lands, and speech
+ * takes ~0.2 s to start; at walking pace (~1.2 m/s) that is ~0.8 m travelled before the
+ * user hears anything. The first value, 0.6 m, warned after impact. 1.0 m leaves ~0.2 m.
+ * Faster depth is the real fix. docs/decisions.md 2026-09-27.
  */
-export const DEPTH_IMMINENT_M = 0.6
-export const DEPTH_NEAR_M = 1.2
+export const DEPTH_IMMINENT_M = 1.0
+export const DEPTH_NEAR_M = 1.6
 export const DEPTH_FAR_M = 2.5
+
+/** While still too close, repeat the spoken warning no more often than this. */
+export const TOO_CLOSE_REPEAT_MS = 4000
+
+/** Carries the spoken too-close warning's state between frames. */
+export interface CloseWarning {
+  active: boolean
+  lastAt: number
+}
+
+/**
+ * The spoken "stop" for something right ahead, or null for silence. Speaks on entering
+ * the imminent zone, then at most every TOO_CLOSE_REPEAT_MS while it stays there, and
+ * re-arms once the user backs off. Haptics already fire; speech adds what the thing is,
+ * if anything knows (`name` from detection or segmentation), because a buzz cannot say
+ * "wall" versus "person".
+ */
+export function tooCloseWarning(
+  pattern: PulsePattern,
+  name: string | null,
+  state: CloseWarning,
+  now: number,
+): string | null {
+  if (pattern !== 'imminent') {
+    state.active = false
+    return null
+  }
+  if (state.active && now - state.lastAt < TOO_CLOSE_REPEAT_MS) return null
+  state.active = true
+  state.lastAt = now
+  return name != null ? `Stop. ${name} right in front of you.` : 'Stop. Something right in front of you.'
+}
 
 /**
  * {@link patternFor}'s counterpart for real depth instead of box size. Closer is

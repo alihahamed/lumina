@@ -103,6 +103,17 @@ overlay exists so you can check the heuristic against reality — watch it while
 - [ ] Same for a glass door, a step down, and a doorway
 - [ ] A wall-mounted sign should read as far away, not close
 
+### Spoken "stop" and scene names (2026-09-27)
+- [ ] Walk at normal pace toward a wall: "Stop. Wall right in front of you." **before**
+      contact. Measure the distance at which it starts speaking
+- [ ] Walk toward a closed door: "door ahead" around 1.5 m, then "Stop. Door…"
+- [ ] Stairs going down, and going up: "stairs ahead" (with a spotter!)
+- [ ] A glass door: what does it say? (the known weak spot)
+- [ ] Standing still facing a wall: repeats every ~4 s, not constantly
+- [ ] A person standing in front of a wall: says "person", not "wall"
+- [ ] No shutter sound while walking near things
+- [ ] Log `scene ahead … ms`: record SegFormer's time on the phone here
+
 ### Blindfold test — required before phase 3 counts as done
 - [ ] Can you avoid a chair using haptics alone, with the screen off and sound muted?
 - [ ] Does the pulse rate tell you distance, or only presence?

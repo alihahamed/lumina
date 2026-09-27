@@ -5,6 +5,27 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-09-27 — "Stop" warning and naming walls, doors and stairs
+
+**Status:** built, tested in logic (6 suites), export verified exactly. APK built (203.9 MB).
+**Not yet tried on the phone.**
+**Files:** `src/narrationPolicy.ts` (`tooCloseWarning`, thresholds), `src/sceneNames.ts`
+(+test), `src/useSegmenter.ts`, `src/ade20kLabels.ts` (generated),
+`scripts/export_segformer.py`, `App.tsx` (`publish`: naming trigger, warning, landmarks).
+
+### What the user hears
+
+- Within ~1 m of anything straight ahead: "Stop. Wall right in front of you." (or chair,
+  door, stairs…; "something" when nothing names it). Repeats every 4 s while still there.
+- Approaching a door or stairs (within ~1.6 m): "door ahead" / "stairs ahead", once, with
+  the normal narration cooldowns.
+
+### How it works
+
+Depth decides *when* (near or imminent). SegFormer decides *what*, on a silent background
+still, never in the camera loop. See `docs/decisions.md` for the resolution, threshold and
+licence reasoning.
+
 ## 2026-09-27 — Phase 6: remember places, and voice commands
 
 **Status:** **working on the phone** (begoniain, 2026-09-27). It saved "bedroom number one
