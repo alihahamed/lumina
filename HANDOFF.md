@@ -120,7 +120,7 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
   (`expo-speech-recognition`). Places are CLIP descriptors in Supabase, anonymous users,
   `MATCH_THRESHOLD` 0.85 (a guess). The saved spot matched at 0.92 and an unsaved room was
   not named. Root `.env` holds the Supabase URL and publishable key.
-- **Release readiness (2026-09-27):** depth model hosted on the GitHub release `models-v1`;
+- **Release readiness (2026-09-27):** depth model bundled in the APK (`npm run fetch-models`);
   backend requires a Supabase JWT when `SUPABASE_URL` is set; Viro and the depth spike are
   removed; the offline VLM downloads on Wi-Fi only; the debug overlay is hidden in release
   builds. APK: `npx expo run:android --variant release` (see `SETUP.md` §5). The backend is
@@ -151,7 +151,7 @@ down with it.
 If it visibly lags underfoot, the next moves are 112px, int8 quantisation, or depth every
 Nth frame holding the last value — options recorded in `docs/decisions.md`.
 
-The depth model is hosted on the GitHub release `models-v1` and downloads on first launch. Export toolchain lives in a scratchpad venv that will be gone; the
+The depth model is **bundled in the app**. Run `npm run fetch-models` once after cloning, or Metro cannot resolve it. Export toolchain lives in a scratchpad venv that will be gone; the
 recipe and its traps are in `scripts/export_depth.py` and `docs/decisions.md`.
 
 ### Decided, not done (2026-09-27)

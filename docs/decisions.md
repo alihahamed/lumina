@@ -11,10 +11,17 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 So the app works off the laptop and on phones other than begoniain.
 
-- **Depth model hosted on the repo's GitHub release `models-v1`** (public, 99 MB, sha256 in
-  the release notes). Before this, it was adb-pushed onto one phone, and every other
-  install silently fell back to the bbox heuristic. **Rejected:** Hugging Face, which is
-  fine but needs another account, and Supabase Storage, which needs a dashboard upload.
+- **Depth model bundled inside the APK** (99 MB, via `metro.config.js` + `require()`).
+  It was first hosted on the repo's GitHub release `models-v1` and downloaded at first
+  launch. On our home network, the phone's DNS kept resolving GitHub's asset CDN to
+  `185.199.109.133`, which never answered (TCP stuck in SYN_SENT; the laptop could not
+  reach that address either). **Depth is the safety layer, so it must not depend on a
+  first-launch download at all.** The release stays as the build-time source:
+  `npm run fetch-models` downloads it with a sha256 check into `assets/models/`
+  (gitignored; 99 MB in git history would burden every clone). Result: "depth model
+  ready" 1 s after launch, no network. APK 188.6 MB. **Rejected:** committing the binary
+  to git, and Hugging Face or Supabase Storage (another account or upload, and still a
+  first-launch download).
   Licence: upstream says Depth-Anything-V2-**Small** is Apache-2.0. The metric fine-tune
   is not listed separately, so it is credited in the release notes as the Small model.
 - **Backend auth is a Supabase JWT, verified locally.** The project signs ES256 and

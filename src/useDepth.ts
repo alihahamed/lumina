@@ -8,12 +8,13 @@ import { SemanticSegmentationModule } from 'react-native-executorch'
 // YOLO uses. Export script and rationale: docs/decisions.md.
 const Labels = { FOREGROUND: 0, BACKGROUND: 1 } as const
 
-// Hosted on the repo's GitHub release (public, 99 MB, sha256 in the release notes);
-// downloaded and cached on first launch like the YOLO weights. Re-export with
-// scripts/export_depth.py. 140px, not the 252px first tried: that measured 1297 ms/frame
-// on begoniain, far over budget. See docs/decisions.md 2026-09-26 and 2026-09-27.
-const MODEL =
-  'https://github.com/alihahamed/lumina/releases/download/models-v1/depth_anything_v2_metric_indoor_small_140.pte'
+// Bundled inside the app, not downloaded at first launch: depth is the safety layer, and
+// from our network the phone could not reach GitHub's asset CDN (it resolved to a dead
+// address). `npm run fetch-models` puts the file in assets/models/ (gitignored, 99 MB,
+// sha256-checked) before a build. Re-export with scripts/export_depth.py. 140px, not
+// the 252px first tried: that measured 1297 ms/frame on begoniain, far over budget.
+// See docs/decisions.md 2026-09-26 and 2026-09-27.
+const MODEL = require('../assets/models/depth_anything_v2_metric_indoor_small_140.pte')
 
 // Depth Anything expects ImageNet normalisation, applied by the native runtime.
 const NORM_MEAN: [number, number, number] = [0.485, 0.456, 0.406]
@@ -42,8 +43,11 @@ export function useDepth() {
         }
         loaded = mod
         setInstance(mod)
+        // Release builds have no overlay; this line is how to tell depth is on.
+        console.log('depth model ready')
       })
       .catch((e) => {
+        console.warn('depth model failed', e)
         if (active) setError(String(e))
       })
     return () => {

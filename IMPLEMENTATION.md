@@ -46,8 +46,10 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | `src/narrationPolicy.test.ts` | Runs under plain `node`. `npm test` |
 | `src/narrator.ts` | Speaks. Holds the cooldown state |
 | `src/haptics.ts` | Vibrates. Holds the pulse state |
-| `src/useDepth.ts` | Loads the custom depth `.pte` via `SemanticSegmentationModule.fromCustomModel`, exposes `runOnFrame`. Drives haptics. Model hosted on the GitHub release `models-v1`, downloaded on first launch |
+| `src/useDepth.ts` | Loads the custom depth `.pte` via `SemanticSegmentationModule.fromCustomModel`, exposes `runOnFrame`. Drives haptics. Model bundled in the app (`assets/models/`, via `npm run fetch-models`) |
 | `src/depthZones.ts` | Depth map to left/centre/right nearest-decile metres. Pure, tested by `depthZones.test.ts` |
+| `metro.config.js` | Adds `.pte` to Metro's asset types so the depth model is bundled. Nothing else |
+| `scripts/fetch-models.sh` | `npm run fetch-models`: the 99 MB depth model into `assets/models/` (gitignored), sha256-checked |
 | `scripts/export_depth.py` | Depth Anything V2 Metric-Indoor-Small to XNNPACK `.pte`. Needs its own Python venv, see `docs/decisions.md` 2026-09-26 |
 | `src/commands.ts` | Transcript → command (`describe`, `read`, `save`, `whereami`, `unknown`). Pure, tested |
 | `src/useVoiceCommand.ts` | Hold-and-speak via `expo-speech-recognition`; one result per session |

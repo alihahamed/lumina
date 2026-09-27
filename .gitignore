@@ -46,3 +46,6 @@ yarn-error.*
 # local agent/session scratch — never commit
 .playwright-mcp/
 .remember/
+
+# model binaries: too big for git, fetched by scripts/fetch-models.sh
+assets/models/
