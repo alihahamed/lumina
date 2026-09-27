@@ -114,7 +114,7 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
   Backend verified against real Gemini, 2–4 s. Hold gesture confirmed on the phone.
 - **Phase 7 built.** `src/useOfflineDescriber.ts`: LFM2.5-VL-450M, used only when the
   cloud describe fails. ~14 s for two sentences, 649 MB first-launch download, ~1.6 GB
-  app RAM. The fallback ran by hand (backend stopped): 16.6 s, no crash. Accuracy of that description not reported.
+  app RAM. The fallback ran by hand (backend stopped): 16.6 s, no crash. The description matched the scene.
 - **adb cannot tap on begoniain.** MIUI drops `input tap` silently. Test UI by hand.
 - M7 Supabase migration and M8 Hono `/describe` written, not deployed (`docs/feature.md`).
 

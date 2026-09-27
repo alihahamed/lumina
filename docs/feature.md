@@ -9,8 +9,7 @@ can pick it up cold. Newest first.
 
 **Status:** the model works on device. It described a bedroom and a known test JPEG
 accurately (benchmark run, 2026-09-27). The fallback path was then run by hand with the
-backend stopped: 16.6 s, no crash. **Whether that description matched the room was not
-reported.** See `test-checklist.md` Phase 7.
+backend stopped: 16.6 s, no crash. It matched the scene. See `test-checklist.md` Phase 7.
 **Covers:** `PRD.md` section 8 phase 7, module M5 (offline half).
 **Files:** `src/useOfflineDescriber.ts`, `src/text.ts` (+ `text.test.ts`), `App.tsx`
 (`describeNow`'s catch, the "offline vlm" overlay line).

@@ -162,7 +162,7 @@ backend over USB.
       (2026-09-27, benchmark run, begoniain)
 - [x] Hold with the backend stopped goes to the phone model: it answered in 16.6 s
       (49 tokens), no crash (2026-09-27, by hand, from the log)
-- [ ] …and the description matches the room. Not reported, so re-check
+- [x] …and the description matched the scene (2026-09-27, by hand)
 - [ ] Time from letting go to the first described word. The model alone measured ~14 s
 - [ ] Nothing in view that is not there (no invented stairs or doors). The failure the
       first prompt had
