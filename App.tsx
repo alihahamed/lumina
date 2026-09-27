@@ -27,6 +27,7 @@ import {
 import type { ZoneDepths } from './src/depthZones'
 import { alert, narrate, resetNarrator } from './src/narrator'
 import { readText } from './src/ocr'
+import { DescribeError, describeScene } from './src/describe'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
 // 100-300 ms a frame. Capping the whole pipeline is cheaper than throttling
@@ -68,40 +69,73 @@ export default function App() {
   // Phase 4: on-demand OCR (PRD section 4, "READING" tier). HD_4_3, not the 4K
   // default — legible enough for a sign, far less to capture and hand to ML Kit.
   const photoOutput = usePhotoOutput({ targetResolution: CommonResolutions.HD_4_3 })
-  const [reading, setReading] = useState(false)
-  // Debug only, like depthStats — lets us confirm OCR worked without needing to hear
-  // the phone's TTS. ponytail: delete once this has been verified a few times.
-  const [lastRead, setLastRead] = useState<string | null>(null)
+  // One on-demand request at a time: OCR and describe share the one photo output.
+  const [busy, setBusy] = useState<'reading' | 'describing' | null>(null)
+  // Debug only, like depthStats — lets us confirm a result without needing to hear
+  // the phone's TTS. ponytail: delete once both have been verified a few times.
+  const [lastResult, setLastResult] = useState<string | null>(null)
 
-  const readNow = useCallback(async () => {
-    if (reading) return
-    setReading(true)
-    alert('Reading')
-    let path: string | null = null
-    try {
-      const file = await photoOutput.capturePhotoToFile({}, {})
-      path = file.filePath
-      const uri = path.startsWith('file://') ? path : `file://${path}`
-      const text = await readText(uri)
-      setLastRead(text.length > 0 ? text : '(no text found)')
-      alert(text.length > 0 ? text : 'No text found')
-    } catch (e) {
-      setLastRead(`error: ${String(e).slice(0, 200)}`)
-      alert('Could not read that')
-      console.warn('OCR failed', e)
-    } finally {
-      // Never leave a photo of the user's surroundings sitting on disk — privacy,
-      // and this phone has run low on storage before (HANDOFF.md).
-      if (path != null) {
-        try {
-          new File(path.startsWith('file://') ? path : `file://${path}`).delete()
-        } catch {
-          // best-effort cleanup; a leftover temp file is not worth surfacing
+  /**
+   * Takes a still, hands it to `work`, speaks what comes back, and deletes the photo
+   * whatever happens. Shared by Phase 4 (read) and Phase 5 (describe).
+   */
+  const withStill = useCallback(
+    async (
+      kind: 'reading' | 'describing',
+      start: string,
+      work: (uri: string) => Promise<string>,
+      fallback: string,
+    ) => {
+      if (busy != null) return
+      setBusy(kind)
+      alert(start)
+      let uri: string | null = null
+      try {
+        const file = await photoOutput.capturePhotoToFile({}, {})
+        uri = file.filePath.startsWith('file://') ? file.filePath : `file://${file.filePath}`
+        const spoken = await work(uri)
+        setLastResult(`${kind}: ${spoken}`)
+        alert(spoken)
+      } catch (e) {
+        const spoken = e instanceof DescribeError ? e.spoken : fallback
+        setLastResult(`${kind} error: ${String(e).slice(0, 200)}`)
+        alert(spoken)
+        console.warn(`${kind} failed`, e)
+      } finally {
+        // Never leave a photo of the user's surroundings sitting on disk — privacy,
+        // and this phone has run low on storage before (HANDOFF.md).
+        if (uri != null) {
+          try {
+            new File(uri).delete()
+          } catch {
+            // best-effort cleanup; a leftover temp file is not worth surfacing
+          }
         }
+        setBusy(null)
       }
-      setReading(false)
-    }
-  }, [photoOutput, reading])
+    },
+    [photoOutput, busy],
+  )
+
+  const readNow = useCallback(
+    () =>
+      withStill(
+        'reading',
+        'Reading',
+        async (uri) => {
+          const text = await readText(uri)
+          return text.length > 0 ? text : 'No text found'
+        },
+        'Could not read that',
+      ),
+    [withStill],
+  )
+
+  // Phase 5: cloud scene description, only ever because the user asked (PRD section 4).
+  const describeNow = useCallback(
+    () => withStill('describing', 'Looking', describeScene, 'Could not describe that'),
+    [withStill],
+  )
 
   useEffect(() => {
     if (!hasPermission) void requestPermission()
@@ -109,7 +143,8 @@ export default function App() {
 
   useEffect(() => {
     // The only way a blind user learns the screen is a button is being told so.
-    if (isReady) alert('Lumina ready. Tap anywhere to read text.')
+    if (isReady)
+      alert('Lumina ready. Tap anywhere to read text. Press and hold to hear what is around you.')
     return () => {
       resetNarrator()
       resetHaptics()
@@ -271,26 +306,38 @@ export default function App() {
       />
 
       {/*
-        Phase 4 trigger: the whole screen. A blind user cannot find a button, but can
-        always tap the glass. Sighted: one tap anywhere. TalkBack: the screen is one
-        element, so its double-tap-to-activate works from anywhere too.
+        On-demand triggers: the whole screen. A blind user cannot find a button, but can
+        always touch the glass.
+          tap anywhere        → read text (Phase 4)
+          press and hold      → describe the scene (Phase 5, cloud)
+        TalkBack: the screen is one element. Double-tap reads, double-tap-and-hold
+        describes, and both are also in its actions menu (accessibilityActions).
 
-        The overlay is nested inside so taps on the debug text bubble up to here;
+        The overlay is nested inside so touches on the debug text bubble up to here;
         the Camera stays a sibling underneath so its own native touch handling is
         never in the path. The depth-spike button still wins its own taps — the
         innermost Pressable gets the touch.
 
         ponytail: a palm or thumb brushing the glass while walking will trigger a
-        read. Harmless (it just speaks), but if it happens in testing, move to a
-        long-press or a volume button. See docs/decisions.md 2026-09-27.
+        read. Harmless (it just speaks), but if it happens in testing, move reading to
+        a volume button. See docs/decisions.md 2026-09-27.
       */}
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={() => void readNow()}
-        disabled={reading}
+        onLongPress={() => void describeNow()}
+        disabled={busy != null}
         accessibilityRole="button"
-        accessibilityLabel="Read text"
-        accessibilityHint="Takes a photo and reads any text in view aloud"
+        accessibilityLabel="Lumina camera"
+        accessibilityHint="Double tap to read text. Double tap and hold to describe what is around you."
+        accessibilityActions={[
+          { name: 'activate', label: 'Read text' },
+          { name: 'longpress', label: 'Describe surroundings' },
+        ]}
+        onAccessibilityAction={(e) => {
+          if (e.nativeEvent.actionName === 'activate') void readNow()
+          else if (e.nativeEvent.actionName === 'longpress') void describeNow()
+        }}
       >
       {/* Debug overlay. The real user is blind — this exists for us, not them. */}
       <View style={styles.overlay} pointerEvents="box-none">
@@ -318,9 +365,9 @@ export default function App() {
             {depthStats.zones.right.toFixed(1)} m
           </Text>
         )}
-        {lastRead != null && (
-          <Text style={styles.detail} numberOfLines={3}>
-            last read: {lastRead}
+        {lastResult != null && (
+          <Text style={styles.detail} numberOfLines={4}>
+            last {lastResult}
           </Text>
         )}
         <Pressable
@@ -342,7 +389,7 @@ export default function App() {
           ))
         )}
         <Text style={styles.detail}>
-          {reading ? 'reading text…' : 'tap anywhere to read text'}
+          {busy != null ? `${busy}…` : 'tap: read text · hold: describe scene'}
         </Text>
       </View>
       </Pressable>

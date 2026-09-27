@@ -5,6 +5,47 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-09-27 — Phase 5: "What's around me?" (cloud scene description)
+
+**Status:** the backend works against real Gemini. 8/8 calls answered in 2.1–3.7 s on
+the final config, with sensible hazard-first descriptions. Model choice and measurements
+are in `docs/decisions.md`. The app shows the new hint on device. **Confirmed on the phone by
+hand:** hold anywhere described the room correctly (Gemini 4.0 s).
+**Covers:** `PRD.md` section 8 phase 5, module M5 (cloud half) and M8.
+**Files:** `src/describe.ts`, `App.tsx` (`withStill`, `describeNow`, `onLongPress`,
+`accessibilityActions`), `backend/src/index.ts`, `backend/src/dev.ts`, `backend/.env.example`.
+
+### What it does
+
+Press and hold anywhere. The app says "Looking", takes the same HD still as OCR, sends it
+as base64 to `POST /describe`, and speaks the 2–3 sentence answer with `alert()`. The
+photo is deleted afterwards. OCR and describe share `withStill`, so only one runs at a
+time and they never fight over the photo output.
+
+Failures are spoken in words the user can act on (`DescribeError`): "Check the internet
+connection", "That took too long", or "Could not describe that". An offline fallback is
+Phase 7.
+
+### Run it locally
+
+```bash
+cp backend/.env.example backend/.env    # paste GEMINI_API_KEY
+cd backend && npm install && npm run dev  # http://localhost:8787
+# root `npm run dev` forwards 8787 as well as 8081. After a replug, rerun it or:
+adb reverse tcp:8787 tcp:8787
+```
+
+The app defaults to `http://localhost:8787`. For a deployed backend, set
+`EXPO_PUBLIC_DESCRIBE_URL` (and `EXPO_PUBLIC_LUMINA_TOKEN` if the server sets one) in a
+root `.env`, then restart Metro. `EXPO_PUBLIC_` values are baked in at bundle time.
+
+### Shortcuts, on purpose
+
+- **No caching**, although the PRD says "cache hard". Each hold is one call. The free
+  tier covers testing. Add caching if usage grows.
+- **Auth is a shared token**, see `docs/decisions.md`.
+- **The Vercel entry point is still unverified.**
+
 ## 2026-09-27 — Phase 4: on-demand text reading (ML Kit OCR)
 
 **Status:** **working on device** (begoniain, 2026-09-27). A teammate pointed it at a

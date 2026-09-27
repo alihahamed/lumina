@@ -137,9 +137,24 @@ Tap by hand. `adb shell input tap` is silently ignored on begoniain (MIUI), see
 - [ ] Screen off in your mind, eyes closed. Can you find and read a door sign using only
       the startup hint and tap-anywhere?
 
-## Phase 5+ — add sections as phases land
+## Phase 5 — "What's around me?" (cloud)
 
-Cloud VLM, spatial memory. Each gets its own section here before it is called
+Backend running (`cd backend && npm run dev`) and `adb reverse tcp:8787 tcp:8787` done.
+
+- [x] Hold anywhere: says "Looking", then 2–3 sentences that match the room (2026-09-27,
+      begoniain, by hand. Backend logged 4.0 s for the Gemini call)
+- [ ] A quick tap still reads text and does **not** also describe
+- [ ] Time from letting go to the first spoken word. PRD budget is 1–3 s. The backend alone
+      measured 2.1–3.7 s from the laptop (2026-09-27); record the on-phone number here
+- [ ] Backend stopped: says "Check the internet connection" within ~18 s, no crash
+- [ ] Hold while a read is running: ignored, and nothing overlaps
+- [ ] With TalkBack on: double-tap-and-hold describes. Actions menu lists both actions
+- [ ] Does the description name hazards that YOLO cannot (stairs, glass, open door)?
+      This is the report's argument for the tier
+
+## Phase 6+ — add sections as phases land
+
+Spatial memory. Each gets its own section here before it is called
 done, and every one of them needs the failure cases and the blindfold test.
 
 **Never test with a real blind user without a sighted spotter present.**

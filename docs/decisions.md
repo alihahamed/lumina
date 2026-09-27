@@ -7,6 +7,47 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-09-27 — Phase 5: Gemini 3.1 Flash-Lite with a 3.5 fallback, not the PRD's 2.5; hold to describe
+
+**Model changed from the PRD (section 5, Gemini 2.5 Flash-Lite).** Google's deprecations
+page (checked 2026-09-27) says the 2.5 models are now "limited to users who have actively
+used them in the past", so a new API key would likely be refused. `gemini-3.5-flash-lite`
+(GA July 2026) is the current Flash-Lite and was the first pick. It has a free tier and
+takes image input.
+
+**Then measured and reversed** (free tier, 38 calls, 2026-09-27, bicycle test JPEG):
+
+| Model | Calls | Hung (no answer in 8 s, one tried to 45 s) | Answer time when it answered |
+|---|---|---|---|
+| `gemini-3.5-flash-lite` | 21 | **12** | 2.4–4.4 s |
+| `gemini-3.1-flash-lite` | 18 | 0 | 2.1–4.6 s |
+
+Latency is answer-or-hang, not slow, so a long timeout only makes the user wait for
+nothing. The backend gives each attempt 8 s, then tries the other model. **3.1 is primary
+and 3.5 is the fallback.** 3.1 shuts down May 2027. After that it returns 404, which the
+backend treats as "try the next model" (tested with a fake model name), so that date
+degrades to 3.5 rather than breaking. Both are overridable with `GEMINI_MODEL` and
+`GEMINI_FALLBACK_MODEL`. **Revisit** if 3.5's hang rate drops. It was two months old
+when measured.
+
+**Gemini 3 thinks by default,** and thought tokens count against `maxOutputTokens`. The
+request sets `thinkingLevel: 'minimal'` and raises the budget from 150 to 400, so a
+thinking model cannot spend the whole budget and return nothing. **Verified live**:
+both models accept the field.
+
+**Gesture: press and hold anywhere.** Tap was already taken by reading. TalkBack users
+get double-tap-and-hold, and both actions are in TalkBack's actions menu through
+`accessibilityActions`. **Rejected:** a two-finger tap (TalkBack reserves multi-finger
+gestures) and a voice command (no STT yet).
+
+**Dev path without deploying:** `backend/src/dev.ts` serves the same Hono app on the
+laptop, and the phone reaches it with `adb reverse tcp:8787 tcp:8787`. Vercel only
+matters once someone tests away from the laptop.
+
+**Auth stopgap:** an optional shared token (`LUMINA_APP_TOKEN` / `EXPO_PUBLIC_LUMINA_TOKEN`).
+It is baked into the app, so it only stops a leaked URL being used by strangers. The real
+fix is a Supabase JWT once auth exists. `ponytail:` at the site.
+
 ## 2026-09-27 — Phase 4 OCR: `@react-native-ml-kit/text-recognition`, not ExecuTorch's own
 
 **Chose:** the community `@react-native-ml-kit/text-recognition` package (Google ML Kit

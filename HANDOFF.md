@@ -108,6 +108,10 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
 - **Phase 4 OCR works on device.** `src/ocr.ts` (`@react-native-ml-kit/text-recognition`) plus
   VisionCamera `usePhotoOutput`. Read a book correctly. The trigger is **tap anywhere**
   (a full-screen `Pressable`), and startup announces it. Tap-anywhere confirmed by hand. See `docs/test-checklist.md` Phase 4.
+- **Phase 5 built.** Hold anywhere → `src/describe.ts` → local backend → Gemini
+  3.1 Flash-Lite, falling back to 3.5 (not 2.5; measured, see `docs/decisions.md`). Needs `backend/.env` with
+  `GEMINI_API_KEY`, `npm run dev` in `backend/`, and `adb reverse tcp:8787 tcp:8787`.
+  Backend verified against real Gemini, 2–4 s. Hold gesture confirmed on the phone.
 - **adb cannot tap on begoniain.** MIUI drops `input tap` silently. Test UI by hand.
 - M7 Supabase migration and M8 Hono `/describe` written, not deployed (`docs/feature.md`).
 

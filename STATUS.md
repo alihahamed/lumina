@@ -162,7 +162,7 @@ policy.
 | 2 | Object detection + narration | done, on device |
 | 3 | Obstacle warning via vibration | depth wired to haptics on begoniain (2026-09-27); **accuracy unconfirmed, and a native crash was seen once**, see section 5 |
 | 4 | Read signs and room numbers on demand (ML Kit, offline, free) | **working on device** (read a book, 2026-09-27); tap-anywhere trigger, checklist open |
-| 5 | "What's around me?" via cloud VLM (Gemini free tier) | backend proxy written, not deployed (`backend/`) |
+| 5 | "What's around me?" via cloud VLM (Gemini free tier) | built; backend answers in 2–4 s via Gemini 3.1 Flash-Lite (3.5 fallback). **works on the phone** (2026-09-27) |
 | 6 | Save and recall routes | schema written, not deployed (`supabase/migrations/`) |
 | 7 | Offline VLM fallback when there is no network | not started |
 

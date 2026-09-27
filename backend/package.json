@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "node --env-file-if-exists=.env src/dev.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
     "hono": "^4.6.0"
   },
   "devDependencies": {
