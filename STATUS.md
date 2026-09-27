@@ -159,7 +159,7 @@ a glass door). If the ~435 ms/frame combined latency is felt while walking, revi
 | 2 | Object detection + narration | done, on device |
 | 3 | Obstacle warning via vibration | depth wired to haptics on begoniain (2026-09-27); **accuracy unconfirmed**, see section 5 |
 | 4 | Read signs and room numbers on demand (ML Kit, offline, free) | **working on device** (read a book, 2026-09-27); tap-anywhere trigger, checklist open |
-| 5 | "What's around me?" via cloud VLM (Gemini free tier) | built; backend answers in 2–4 s via Gemini 3.1 Flash-Lite (3.5 fallback). **works on the phone** (2026-09-27) |
+| 5 | "What's around me?" via cloud VLM (Gemini free tier) | built; backend **deployed** (Vercel, Supabase JWT required), answers in 2–4 s via Gemini 3.1 Flash-Lite (3.5 fallback). Works on the phone (2026-09-27) |
 | 6 | Save and recall routes | **recognition works on the phone** (save by voice, "where am I"). Guidance between places not built |
 | 7 | Offline VLM fallback when there is no network | **model works on the phone** (LFM2.5-VL-450M, ~14 s); fallback works by hand and matched the scene (16.6 s) |
 

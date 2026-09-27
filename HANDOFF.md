@@ -123,8 +123,8 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
 - **Release readiness (2026-09-27):** depth model hosted on the GitHub release `models-v1`;
   backend requires a Supabase JWT when `SUPABASE_URL` is set; Viro and the depth spike are
   removed; the offline VLM downloads on Wi-Fi only; the debug overlay is hidden in release
-  builds. APK: `npx expo run:android --variant release` (see `SETUP.md` §5). The backend
-  deploy to Vercel is pending a Vercel login.
+  builds. APK: `npx expo run:android --variant release` (see `SETUP.md` §5). The backend is
+  deployed at `https://lumina-backend-pink.vercel.app` (Vercel account `derzzzhenry-4646`).
 - **adb cannot tap on begoniain.** MIUI drops `input tap` silently. Test UI by hand.
 - M7 Supabase migration and M8 Hono `/describe` written, not deployed (`docs/feature.md`).
 
@@ -158,8 +158,7 @@ recipe and its traps are in `scripts/export_depth.py` and `docs/decisions.md`.
 
 - **Gemini key:** it appeared in a chat transcript. The owner chose not to rotate it
   (free tier, no billing). Rotate it if usage looks odd in AI Studio.
-- **Backend deploy:** deferred until someone needs describe away from the laptop. It runs
-  locally (`cd backend && npm run dev`). Add real auth before deploying.
+- **Backend deploy:** done, with Supabase JWT auth. See `SETUP.md` §4.
 - **Phase 6 gesture:** hold becomes **hold-and-speak voice commands** ("what's around me",
   "save this as …", "where am I"). Tap stays as read-text. Chosen over adding another
   gesture, which clashes with TalkBack and does not scale.

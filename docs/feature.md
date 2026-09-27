@@ -116,7 +116,9 @@ root `.env`, then restart Metro. `EXPO_PUBLIC_` values are baked in at bundle ti
 - **No caching**, although the PRD says "cache hard". Each hold is one call. The free
   tier covers testing. Add caching if usage grows.
 - **Auth is a shared token**, see `docs/decisions.md`.
-- **The Vercel entry point is still unverified.**
+- **Deployed** 2026-09-27: `https://lumina-backend-pink.vercel.app` (zero-config Hono on
+  Vercel, `src/index.ts`). Live test: no token or garbage → 401, a real user → 200 in
+  2.2–3.6 s. See `SETUP.md` §4.
 
 ## 2026-09-27 — Phase 4: on-demand text reading (ML Kit OCR)
 

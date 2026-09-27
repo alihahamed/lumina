@@ -129,6 +129,24 @@ Edit TypeScript, save, the phone reloads in about a second.
 
 **Rebuild only when** you add a native module or change `app.json` plugins.
 
+### The deployed backend
+
+Live at **`https://lumina-backend-pink.vercel.app`** (Vercel project `lumina-backend`,
+account `derzzzhenry-4646`). The Gemini key and `SUPABASE_URL` live in Vercel's encrypted
+env settings, not in any file, and `backend/.vercelignore` keeps `backend/.env` from being
+uploaded. To redeploy after a backend change:
+
+```bash
+cd backend
+npx vercel login                          # once per machine
+npx vercel link --project lumina-backend  # once per machine
+npx vercel deploy --prod
+```
+
+A teammate without access to that Vercel account can deploy their own copy with the same
+commands, a new project name, and `npx vercel env add GEMINI_API_KEY production`, then
+`npx vercel env add SUPABASE_URL production`.
+
 ---
 
 ## 5. Build an APK (no laptop needed)
@@ -139,9 +157,14 @@ JavaScript, so it needs no Metro or USB:
 
 ```bash
 # root .env must have EXPO_PUBLIC_DESCRIBE_URL=https://... (release builds block http://)
-npx expo run:android --variant release
+npx expo prebuild --platform android      # if /android does not exist yet
+cd android && ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a
 # APK: android/app/build/outputs/apk/release/app-release.apk
 ```
+
+`arm64-v8a` only: every current phone, and ExecuTorch does not support 32-bit ARM anyway.
+All four architectures made a 227 MB APK; arm64-v8a alone is 89.5 MB. `npx expo run:android --variant release` also
+works and installs on a plugged-in phone, but builds every architecture.
 
 Share the APK file and install it by tapping it, or with `adb install -r app-release.apk`.
 
