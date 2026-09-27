@@ -168,9 +168,13 @@ works and installs on a plugged-in phone, but builds every architecture.
 
 Share the APK file and install it by tapping it, or with `adb install -r app-release.apk`.
 
-- It is signed with the **debug keystore** generated on the machine that built it. That is
-  fine for sideloading, but not the Play Store. APKs from different laptops have different
-  signatures: uninstall before installing one built elsewhere.
+- It is signed with React Native's standard **public debug keystore** (SHA1 `5E:8F:16:06…F6:25`),
+  the same on every machine. So APKs from any teammate's laptop install over each other.
+  But the key is public, so it is fine for our phones and the viva, **not** for
+  distribution. A store release needs a private keystore.
+- **Install with `adb install -r`, do not uninstall first.** Uninstalling deletes the
+  saved sign-in, and the phone becomes a new anonymous user who cannot see the old saved
+  places. Linking an account to keep places across reinstalls is not built.
 - `EXPO_PUBLIC_` values are read **at build time**. Change the `.env`, rebuild the APK.
 - The debug overlay is hidden in release builds unless built with `EXPO_PUBLIC_SHOW_DEBUG=1`.
 

@@ -33,8 +33,10 @@ So the app works off the laptop and on phones other than begoniain.
   any connection. It is latched for the session, so leaving Wi-Fi never unloads it.
   **Rejected:** an opt-in setting, which a blind user would have to find.
 - **Debug overlay hidden in release builds** unless `EXPO_PUBLIC_SHOW_DEBUG=1`.
-- **Release APK signed with the debug keystore** (Expo default), fine for sideloading.
-  A real keystore is needed before any store release.
+- **Release APK signed with React Native's public debug keystore** (the template default,
+  identical on every machine). Fine for sideloading. A private keystore is needed before any
+  distribution. **Known gap:** uninstalling loses the anonymous user, and with it the saved
+  places. The fix is Supabase account linking, which is not built.
 
 ## 2026-09-27 — Phase 6: recognition first, hold-and-speak, anonymous Supabase users
 
