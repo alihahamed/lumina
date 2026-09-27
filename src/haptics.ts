@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics'
-import { intervalFor, patternFor, type PulsePattern } from './narrationPolicy'
+import { intervalFor, type PulsePattern } from './narrationPolicy'
 
 let lastPulseAt = -Infinity
 let lastPattern: PulsePattern = 'none'
@@ -23,10 +23,15 @@ let lastPattern: PulsePattern = 'none'
  * network, on speech finishing, or on the obstacle having a name — a glass door has
  * no COCO class but is still a wall.
  *
+ * Takes an already-decided pattern, not a raw proximity: the caller picks depth
+ * ({@link patternForDepth}) when it is ready, the bbox heuristic ({@link patternFor})
+ * otherwise, and this stays the one place cooldown state lives either way — calling it
+ * from two sources with their own state would double-buzz. See `docs/decisions.md`
+ * 2026-09-27.
+ *
  * @returns the pattern fired, or 'none'.
  */
-export function pulseFor(proximity: number, now: number = Date.now()): PulsePattern {
-  const pattern = patternFor(proximity)
+export function pulseFor(pattern: PulsePattern, now: number = Date.now()): PulsePattern {
   const interval = intervalFor(pattern)
   if (interval == null) {
     lastPattern = 'none'

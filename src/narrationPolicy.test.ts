@@ -9,6 +9,11 @@ import {
   proximityOf,
   intervalFor,
   patternFor,
+  patternForDepth,
+  stablePatternForDepth,
+  DEPTH_IMMINENT_M,
+  DEPTH_NEAR_M,
+  DEPTH_FAR_M,
   FORGET_MS,
   GLOBAL_MIN_GAP_MS,
   MAX_DELAY_MS,
@@ -202,5 +207,42 @@ assert.equal(
   null,
   'a scene with nothing ahead returns null',
 )
+
+// --- depth-driven pattern ------------------------------------------------------
+assert.equal(patternForDepth(5), 'none', 'open room, nothing to warn about')
+assert.equal(patternForDepth(DEPTH_FAR_M), 'none', 'boundary is exclusive on the far side')
+assert.equal(patternForDepth(DEPTH_FAR_M - 0.01), 'far')
+assert.equal(patternForDepth(DEPTH_NEAR_M), 'far', 'boundary belongs to the nearer bucket')
+assert.equal(patternForDepth(DEPTH_NEAR_M - 0.01), 'near')
+assert.equal(patternForDepth(DEPTH_IMMINENT_M), 'near')
+assert.equal(patternForDepth(DEPTH_IMMINENT_M - 0.01), 'imminent')
+assert.equal(patternForDepth(0), 'imminent', 'touching the lens is still imminent, not a crash')
+
+// --- stable (hysteresis) depth pattern -----------------------------------------
+// The bug this exists to fix: a reading sitting right on a boundary must not flip
+// back and forth every frame just because of sensor noise.
+{
+  const justAbove = DEPTH_FAR_M + 0.05 // reads 'none'
+  const justBelow = DEPTH_FAR_M - 0.05 // reads 'far'
+  // Coming from 'far', staying just above the raw boundary must NOT flip to 'none'.
+  assert.equal(stablePatternForDepth(justAbove, 'far'), 'far', 'noise must not flip far -> none')
+  // Coming from 'none', staying just below the raw boundary must NOT flip to 'far'.
+  assert.equal(stablePatternForDepth(justBelow, 'none'), 'none', 'noise must not flip none -> far')
+  // But a real change, well past the widened boundary, still gets through.
+  assert.equal(stablePatternForDepth(DEPTH_FAR_M - 1, 'none'), 'far', 'a real approach is not stuck')
+  assert.equal(stablePatternForDepth(DEPTH_FAR_M + 1, 'far'), 'none', 'a real retreat is not stuck')
+}
+// Same idea at the near/imminent boundary.
+{
+  const justAbove = DEPTH_IMMINENT_M + 0.05
+  assert.equal(
+    stablePatternForDepth(justAbove, 'imminent'),
+    'imminent',
+    'noise must not flip imminent -> near',
+  )
+}
+// No previous reading yet: behaves like the plain lookup, biased to not over-warn.
+assert.equal(stablePatternForDepth(5, 'none'), 'none')
+assert.equal(stablePatternForDepth(0.1, 'none'), 'imminent')
 
 console.log('narrationPolicy: all checks passed')

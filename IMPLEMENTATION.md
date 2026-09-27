@@ -3,7 +3,7 @@
 Everything that actually exists in this repo, and what each piece does. Kept in step
 with the code — if you add something, add it here.
 
-Last updated: **2026-08-23**
+Last updated: **2026-09-22**
 
 Trace of how it all runs at runtime: [`docs/flow.md`](docs/flow.md).
 Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
@@ -18,12 +18,15 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | Camera | `react-native-vision-camera` | 5.2.3 (Nitro rewrite) |
 | On-device ML | `react-native-executorch` | 0.9.3 |
 | Detection | YOLO26n, XNNPACK (CPU) build | via ExecuTorch registry |
-| AR / depth | `@reactvision/react-viro` → ARCore | spike only, not in the main path |
+| Depth | Depth Anything V2 Metric-Indoor, custom `.pte` via ExecuTorch | drives haptics, see `docs/decisions.md` 2026-09-27 |
+| OCR | `@react-native-ml-kit/text-recognition` (Google ML Kit) | 2.0.0, on-demand only |
+| AR | `@reactvision/react-viro` → ARCore | spike only, not in the main path |
 | Speech | `expo-speech` (system TTS) | SDK 57 |
 | Vibration | `expo-haptics` | SDK 57 |
 | Worklets | `react-native-worklets` + `-vision-camera-worklets` | 5.2.3 |
 
-Android only. `minSdkVersion` 26 — required, see `docs/bug.md`.
+**Android** is the team’s primary target: `minSdkVersion` 26 — required, see `docs/bug.md`.
+**iPhone** dev builds use EAS (`eas.json`, `app.json` `ios` block, iOS 17+); see `docs/setup-ios.md`.
 
 ---
 
@@ -37,8 +40,15 @@ Android only. `minSdkVersion` 26 — required, see `docs/bug.md`.
 | `src/narrationPolicy.test.ts` | Runs under plain `node`. `npm test` |
 | `src/narrator.ts` | Speaks. Holds the cooldown state |
 | `src/haptics.ts` | Vibrates. Holds the pulse state |
+| `src/useDepth.ts` | Loads the custom depth `.pte` via `SemanticSegmentationModule.fromCustomModel`, exposes `runOnFrame`. Drives haptics as of 2026-09-27; model is adb-pushed, not shipped |
+| `src/depthZones.ts` | Depth map to left/centre/right nearest-decile metres. Pure, tested by `depthZones.test.ts` |
+| `scripts/export_depth.py` | Depth Anything V2 Metric-Indoor-Small to XNNPACK `.pte`. Needs its own Python venv, see `docs/decisions.md` 2026-09-26 |
+| `src/ocr.ts` | On-demand text reading via `@react-native-ml-kit/text-recognition`. See `docs/decisions.md` 2026-09-27 |
+| `backend/`, `supabase/migrations/` | M8 Hono proxy and M7 schema, written, not deployed |
 | `src/DepthSpike.tsx` | **Throwaway spike.** ARCore depth + swap timing. Delete when answered |
-| `app.json` | Package id, permissions, `minSdkVersion` 26 |
+| `app.json` | Package id, permissions, `minSdkVersion` 26; iOS bundle id + camera/mic usage strings |
+| `eas.json` | EAS Build profiles (`development` = iOS dev client) |
+| `docs/setup-ios.md` | iPhone install + Metro tunnel (does not replace `SETUP.md`) |
 
 There is deliberately **no** `babel.config.js` — adding one breaks the bundler. See
 `docs/bug.md`.
@@ -143,12 +153,12 @@ Device checks, including known blind spots: [`docs/test-checklist.md`](docs/test
 
 ## Not built yet
 
-Phases 4–7. Nothing below exists:
+Phases 5–7, and part of 4. Nothing below exists:
 
-- Sign and room-number reading (ML Kit, on-device, free)
 - Cloud VLM scene description (Gemini Flash-Lite free tier)
 - Route saving and recall (CLIP descriptors + Supabase/pgvector, 512-dim)
 - Offline VLM fallback (LFM2.5-VL-1.6B via ExecuTorch)
-- Any backend at all
+- Deployed backend. `backend/` (Hono `/describe`) and `supabase/migrations/0001_routes_anchors.sql`
+  are written and locally checked but **not deployed and not called by the app**.
 
-The Supabase schema is drafted in `PRD.md` section 7 but nothing is deployed.
+Details: `docs/feature.md` (2026-09-26).

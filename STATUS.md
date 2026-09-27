@@ -3,7 +3,7 @@
 **For the team.** Read this before touching anything. It is the single page that says
 what exists, what was decided, what is still open, and what happens next.
 
-Last updated: **2026-08-23**
+Last updated: **2026-09-27**
 
 ---
 
@@ -29,6 +29,8 @@ Running on a real phone (A001, Android 16):
   at a time, never more than one utterance every 2.5s
 - Phone vibrates for things in your path, three distinct patterns by closeness
 - Debug overlay showing detections, dropped frames, proximity, haptic pattern
+- **Tap anywhere on the screen to read text aloud** (ML Kit OCR, on-device), as of
+  2026-09-27 on begoniain
 
 Everything above works with **airplane mode on**.
 
@@ -40,15 +42,18 @@ Detail: [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
 Be honest about this in the report. It is the gap that matters:
 
-**The app cannot see walls, glass doors, steps, or doorways.**
+**The app cannot yet be *trusted* to see walls, glass doors, steps, or doorways.**
 
 YOLO26n knows 80 things from the COCO dataset — person, chair, laptop, bottle. Indoors,
 the things that actually hurt you are not in that list. There is no "door", no "stairs",
 no "glass panel", no "step down".
 
-Right now the app names furniture continuously but would let you walk into a wall.
-
-Fixing that is the single most important thing left, and section 5 is about how.
+As of **2026-09-27**, on **Derek's Redmi Note 8 Pro (begoniain)** — not A001, not yet
+retested there — a monocular depth model drives the haptic buzz instead of object size,
+which in principle covers a wall or glass door regardless of what YOLO can name. **But no
+one has checked a depth reading against a real, measured distance.** Until that happens,
+treat the numbers as unverified, not as a working safety feature. Detail: section 5,
+`docs/decisions.md` (2026-09-27 entry).
 
 ---
 
@@ -78,46 +83,59 @@ indoors because of steel and wiring. ARCore already does this properly.
 
 ## 5. The one big open decision
 
-**How do we measure distance?** Everything in section 3 depends on this, and it is not
-settled. We are mid-experiment.
+**How do we measure distance?** Monocular depth is now wired into haptics on Derek's
+**Redmi Note 8 Pro**, as of **2026-09-27** — full detail in
+[`docs/depth-spike-session.md`](docs/depth-spike-session.md) and
+[`docs/decisions.md`](docs/decisions.md) (2026-09-23, 2026-09-26, 2026-09-27 entries).
+**What is still open is whether the numbers are correct** — nobody has checked a depth
+reading against a tape measure yet.
 
 ### What we found
 
 | | |
 |---|---|
-| Phone has no depth sensor | `adb shell dumpsys media.camera` reports no `DEPTH_OUTPUT` |
-| ARCore can do it in software | Already installed, works without special hardware |
-| But only one library can hold the camera | ARCore and VisionCamera cannot both have it |
-| Swapping costs **~1.2 seconds each way** | Measured. Too slow to swap while walking |
-| ARCore can take a screenshot instead | And ExecuTorch can run YOLO on a saved image |
+| Phone has no depth sensor | `dumpsys media.camera` — no `DEPTH_OUTPUT` on begoniain |
+| Viro ARCore hit tests on begoniain | **No depth** — all rays `null`, `source: none` (2026-09-23 spike) |
+| Swapping camera owners | **~1.1–1.2 s** — too slow while walking (reconfirmed 1145 ms) |
+| Screenshot → YOLO on still | **358–592 ms** — viable for **on-demand** naming, not continuous |
+| Only one library can hold the camera | Still true — no swap during walk |
 
-### The architecture this points to
+### Architecture — where we are now
 
-```
-ARCore holds the camera. Permanently. Never lets go.
-  ├─ three depth rays (left / centre / right), 4x a second, continuous
-  │     → vibration + brief speech. Works on walls and glass. Never asked for.
-  └─ user asks "what's around me?" → screenshot → YOLO / OCR / cloud VLM
-        → object names, sign reading, scene description
-```
+**On begoniain (and until A001 proves otherwise):**
 
-Obstacle warnings stay **continuous and automatic**. Only the object's *name* becomes
-something you ask for. That is the correct way round: knowing something is there matters
-more than knowing what it is called.
+- **Haptics:** driven by **Depth Anything V2 Metric-Indoor (140px) on VisionCamera
+  frames** via ExecuTorch (`src/useDepth.ts`, `src/depthZones.ts`), as of 2026-09-27.
+  330 ms/frame for depth, ~435 ms/frame combined with YOLO — above the reflex budget in
+  PRD section 4 but running end-to-end. The bbox heuristic is now only the fallback for
+  while the model is loading or a frame errors.
+  **Accuracy against real distances is unconfirmed** — this is the next thing to check,
+  not more speed work, unless the combined latency turns out to be felt underfoot.
+  **A native crash (SIGSEGV) happened once in the depth path on relaunch, root cause
+  unconfirmed** — see `docs/bug.md` 2026-09-27. Ran crash-free for several minutes
+  otherwise, but this is not something a JS try/catch can protect against. Do not treat
+  as stable enough to demo or hand to a test user until this is understood.
+- **On-demand labels:** still-shot → YOLO timing is acceptable when we add a trigger.
+- **Do not** rely on Viro three-ray depth on this phone without a successful re-test.
 
-### Still to measure before we commit
+**If A001 spike shows working `arcore` rays**, revisit ARCore-holds-camera for that device
+only; begoniain may remain on the VisionCamera depth-model path.
 
-Run `src/DepthSpike.tsx` (button in the debug overlay) and record:
+### Spike checklist (begoniain)
 
-- [ ] Do the three distances match reality? Point at a wall you can measure
-- [ ] Does it read a **glass door**? YOLO cannot see one at all
-- [ ] In a doorway, do left/right read close while centre reads far?
-- [ ] Does `source` say `arcore`?
-- [ ] Capture + detect time. Under ~600ms and this architecture is settled
+- [x] Capture + detect under ~600 ms (2026-09-23; see session doc table)
+- [x] Swap cost measured (1145 ms to camera, 2026-09-23)
+- [x] Depth Anything on VisionCamera frames proven on device (2026-09-27, see above)
+- [ ] Three distances match reality — **still unchecked, no tape measure used yet**
+- [ ] Glass door — not tested
+- [ ] Doorway left/right/centre — not tested
+- [ ] `source` says `arcore` — **no** (`none`, 2026-09-23; superseded by the depth model)
 
-**If the spike fails**, the fallback is converting Depth Anything V2-small to ExecuTorch
-and running it alongside YOLO on the frames we already have. No camera conflict, but the
-conversion is unproven work and two models on a CPU may be too slow.
+**Next:** check depth readings against real, measured distances (tape measure, a doorway,
+a glass door). If the ~435 ms/frame combined latency is felt while walking, revisit speed
+(112px, int8 quantisation, depth every Nth frame) — see `docs/decisions.md` 2026-09-27.
+`DepthSpike.tsx` (the ARCore ray spike, now superseded) stays until the team deletes it by
+policy.
 
 ---
 
@@ -142,10 +160,10 @@ conversion is unproven work and two models on a CPU may be too slow.
 |---|---|---|
 | 1 | Camera + speech | done |
 | 2 | Object detection + narration | done, on device |
-| 3 | Obstacle warning via vibration | done on a **heuristic**; real depth pending section 5 |
-| 4 | Read signs and room numbers on demand (ML Kit, offline, free) | not started |
-| 5 | "What's around me?" via cloud VLM (Gemini free tier) | not started |
-| 6 | Save and recall routes | not started |
+| 3 | Obstacle warning via vibration | depth wired to haptics on begoniain (2026-09-27); **accuracy unconfirmed, and a native crash was seen once**, see section 5 |
+| 4 | Read signs and room numbers on demand (ML Kit, offline, free) | **working on device** (read a book, 2026-09-27); tap-anywhere trigger, checklist open |
+| 5 | "What's around me?" via cloud VLM (Gemini free tier) | backend proxy written, not deployed (`backend/`) |
+| 6 | Save and recall routes | schema written, not deployed (`supabase/migrations/`) |
 | 7 | Offline VLM fallback when there is no network | not started |
 
 **Phases 1–4 are a complete, useful, fully offline app.** If the semester runs out there,

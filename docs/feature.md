@@ -5,6 +5,108 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-09-27 — Phase 4: on-demand text reading (ML Kit OCR)
+
+**Status:** **working on device** (begoniain, 2026-09-27). A teammate pointed it at a
+book and it read the text aloud correctly. Trigger changed later that day from a button to
+tap-anywhere. That change is typechecked and the layout was checked by screenshot, but the
+tap-anywhere trigger was then **confirmed by hand** the same day. See `test-checklist.md`.
+**Covers:** `PRD.md` section 8 phase 4, module M4.
+**Files:** `src/ocr.ts`, `App.tsx` ("Phase 4" additions — `usePhotoOutput`, `readNow`,
+the `readButton`), `package.json` (`@react-native-ml-kit/text-recognition`).
+
+### What it does
+
+Tapping the "Read text" button takes a still photo (`usePhotoOutput`, a second
+`CameraOutput` running alongside the existing `frameOutput` on the same `<Camera>`),
+runs it through Google ML Kit's on-device text recognition, and speaks the result with
+`alert()` — the interrupt-and-speak-now path, not the rate-limited narration queue,
+because a user-requested answer must never wait behind ambient chatter. The temp photo
+is deleted immediately after, successful or not.
+
+### Why this package, not what's already installed
+
+`react-native-executorch` already ships OCR hooks (`useOCR`, `useVerticalOCR`) — zero new
+dependency. Used the PRD's actual choice instead (`@react-native-ml-kit/text-recognition`,
+Google ML Kit) because the PRD picked ML Kit specifically for Devanagari support (local
+signage), and nobody has checked whether ExecuTorch's bundled model covers that script.
+Full reasoning and what would change this: `docs/decisions.md` 2026-09-27.
+
+### How it was built
+
+1. Checked the package is still maintained and RN-0.86-compatible before installing —
+   last published 2025-09, no Expo config plugin needed (plain autolinked native module,
+   like VisionCamera and ExecuTorch, not like Viro).
+2. It is an **old-architecture** native module (`ReactContextBaseJavaModule`, accessed via
+   `NativeModules`, no Codegen spec) on a `newArchEnabled: true` project — relies on RN's
+   legacy-interop layer. Confirmed it typechecks; **on-device behaviour is the real test**,
+   see below.
+3. `usePhotoOutput({ targetResolution: CommonResolutions.HD_4_3 })` — not the 4K default,
+   plenty for a sign, far less to capture and process.
+4. `capturePhotoToFile` returns a bare filesystem path, not a `file://` URI — both ML
+   Kit's `recognize()` and `expo-file-system`'s new `File` class (SDK 57) need the prefix
+   added by hand.
+5. Deletes the temp photo in a `finally`, whether or not OCR succeeded — this phone has
+   run out of storage before, and a photo of someone's surroundings should not linger.
+
+### How to pick this up / verify
+
+This needed `npx expo run:android`, not just a Metro reload — it adds Android/Java code,
+`npm install` alone does not link it. Once built: tap **Read text** in front of printed
+text and confirm it's spoken aloud; check `adb logcat` for the interop layer actually
+resolving `NativeModules.TextRecognition` if it silently does nothing.
+
+### Shortcuts, on purpose
+
+- **Trigger is tap-anywhere**, not a button. See `docs/decisions.md` for what was
+  rejected. A stray palm touch will trigger a read. `ponytail:` at the site.
+- **adb cannot drive this on begoniain.** MIUI silently drops `adb shell input tap` unless
+  Developer options → "USB debugging (Security settings)" is on, which needs a Mi account.
+  The command reports success anyway. Test taps by hand.
+- No language/script selection exposed yet — always recognises Latin. Devanagari needs a
+  `TextRecognitionScript.DEVANAGARI` argument threaded through once it matters for testing.
+
+## 2026-09-26 — M7 Supabase schema and M8 Gemini proxy (written, not deployed)
+
+**Status:** code written and locally checked. **Nothing is deployed, no client calls
+either yet.** Phase 5 (cloud VLM) and Phase 6 (route memory) still need the app side.
+**Covers:** `PRD.md` modules M7 and M8.
+**Files:** `supabase/migrations/0001_routes_anchors.sql`, `backend/src/index.ts`,
+`backend/package.json`, `backend/tsconfig.json`
+
+### What it does
+
+- **M7.** `routes` and `anchors` tables, `vector(512)` descriptor with an HNSW cosine
+  index, RLS on both, and `match_anchors()`. Schema is `PRD.md` section 7 verbatim plus the
+  RLS policies and `user_id default auth.uid()` so the client never has to send it.
+  `match_anchors` is left as security invoker on purpose so RLS covers it.
+- **M8.** Hono app with `GET /health` and `POST /describe {image: base64 JPEG}` that calls
+  `gemini-2.5-flash-lite` and returns `{text}`. The prompt is fixed server-side so the
+  endpoint cannot be used as a general Gemini proxy. Image capped at 4M base64 chars.
+  Gemini's error body is never forwarded.
+
+### How to pick it up
+
+1. Create a Supabase project, run the migration in the SQL editor.
+2. `cd backend && npm install`, set `GEMINI_API_KEY`, deploy to Vercel.
+3. App side: downsize a frame to about 768px JPEG, base64 it, POST to `/describe`, speak `text`.
+
+### How it was checked
+
+`npm run typecheck` in `backend/` and at the root. `/describe` exercised with Hono's
+`app.request` for missing image (400), non-JSON (400), oversize (413), no key (500). **Not
+checked:** the SQL against a real Postgres, the live Gemini call, the Vercel deploy.
+
+### Shortcuts
+
+- **No auth or rate limit on `/describe`.** Anyone with the URL spends our free tier.
+  Fine for development, must be fixed (Supabase JWT check, per-user limit) before any demo
+  URL is shared. `ponytail:` comment sits on the route in `backend/src/index.ts`.
+- Vercel entrypoint shape is unverified. Hono's default export works on Workers; on
+  Vercel it may need `hono/vercel`'s `handle()` wrapper.
+
+---
+
 ## Phases 1–2 — Camera, detection, narration
 
 **Status:** working on device (A001, Android 16, 2026-08-23). Detects objects and

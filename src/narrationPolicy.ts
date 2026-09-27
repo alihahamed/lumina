@@ -148,6 +148,67 @@ export function patternFor(proximity: number): PulsePattern {
   return 'imminent'
 }
 
+/**
+ * Depth-driven thresholds, in metres of the nearest thing straight ahead.
+ *
+ * Guesses, like every other constant here — nobody has walked a corridor with these
+ * numbers yet. See HANDOFF.md working agreements and `docs/decisions.md` 2026-09-27.
+ */
+export const DEPTH_IMMINENT_M = 0.6
+export const DEPTH_NEAR_M = 1.2
+export const DEPTH_FAR_M = 2.5
+
+/**
+ * {@link patternFor}'s counterpart for real depth instead of box size. Closer is
+ * worse, so this reads as a mirror image: small distance in, high severity out.
+ */
+export function patternForDepth(metresAhead: number): PulsePattern {
+  if (metresAhead >= DEPTH_FAR_M) return 'none'
+  if (metresAhead >= DEPTH_NEAR_M) return 'far'
+  if (metresAhead >= DEPTH_IMMINENT_M) return 'near'
+  return 'imminent'
+}
+
+/**
+ * How far past a threshold a reading must sit before {@link stablePatternForDepth}
+ * believes it, in metres.
+ *
+ * Depth has no per-object memory the way bbox tracking does — every frame is a fresh
+ * estimate, so sensor noise alone flips it across a boundary constantly. `pulseFor`
+ * lets a severity increase through immediately (a real approach must not wait out a
+ * cooldown), so an undebounced `patternForDepth` fed straight into it buzzed on almost
+ * every frame near a boundary instead of only when something actually got closer. See
+ * `docs/bug.md` 2026-09-27.
+ */
+const DEPTH_HYSTERESIS_M = 0.15
+
+/**
+ * {@link patternForDepth}, but the boundaries shift away from whatever pattern was
+ * last reported — same idea as {@link zoneOf}'s margin for left/ahead/right. A
+ * reading sitting near a threshold stays put; a genuine change still gets through
+ * within a couple of frames.
+ */
+export function stablePatternForDepth(metresAhead: number, previous: PulsePattern): PulsePattern {
+  let imminent = DEPTH_IMMINENT_M
+  let near = DEPTH_NEAR_M
+  let far = DEPTH_FAR_M
+  if (previous === 'imminent') imminent += DEPTH_HYSTERESIS_M
+  else if (previous === 'near') {
+    imminent -= DEPTH_HYSTERESIS_M
+    near += DEPTH_HYSTERESIS_M
+  } else if (previous === 'far') {
+    near -= DEPTH_HYSTERESIS_M
+    far += DEPTH_HYSTERESIS_M
+  } else if (previous === 'none') {
+    far -= DEPTH_HYSTERESIS_M
+  }
+
+  if (metresAhead >= far) return 'none'
+  if (metresAhead >= near) return 'far'
+  if (metresAhead >= imminent) return 'near'
+  return 'imminent'
+}
+
 /** Gap between repeats of a pattern, in ms. */
 export function intervalFor(pattern: PulsePattern): number | null {
   switch (pattern) {

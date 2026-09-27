@@ -10,6 +10,8 @@
  *
  * Nothing here is production code. Do not build on it.
  */
+import * as Clipboard from 'expo-clipboard'
+import * as FileSystem from 'expo-file-system/legacy'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native'
 import {
@@ -17,7 +19,21 @@ import {
   ViroARSceneNavigator,
   type ViroARHitTestResult,
 } from '@reactvision/react-viro'
-import { models, useObjectDetection } from 'react-native-executorch'
+/** Wired from App's single `useObjectDetection` — avoid a second hook in this file. */
+export type DepthSpikeYolo = {
+  runOnFrame:
+    | ((
+        frame: Frame,
+        isFrontCamera: boolean,
+        options?: { detectionThreshold?: number; inputSize?: number },
+      ) => unknown[])
+    | null
+  forward: (
+    input: string,
+    options?: { detectionThreshold?: number; inputSize?: number },
+  ) => Promise<unknown[]>
+  isReady: boolean
+}
 import type { Frame } from 'react-native-vision-camera'
 import { Camera, useFrameOutput } from 'react-native-vision-camera'
 import { scheduleOnRN } from 'react-native-worklets'
@@ -76,7 +92,12 @@ function SpikeScene() {
 
 type Mode = 'arcore' | 'camera'
 
-export default function DepthSpike({ onExit }: { onExit: () => void }) {
+export default function DepthSpike({
+  onExit,
+  runOnFrame,
+  forward,
+  isReady,
+}: { onExit: () => void } & DepthSpikeYolo) {
   // The no-swap path: ARCore keeps the camera, we grab a still and run YOLO on it.
   const navRef = useRef<any>(null)
   const [shot, setShot] = useState<{ capture: number; detect: number; found: number } | null>(
@@ -90,6 +111,7 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
     arcore: null,
     camera: null,
   })
+  const [exportNote, setExportNote] = useState<string | null>(null)
 
   // Stamped the moment the user taps switch, together with the mode being swapped TO.
   // The target matters: a hit-test promise issued before the swap can resolve after it,
@@ -122,9 +144,6 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
       readingSink = null
     }
   }, [onReading])
-
-  const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
-  const { runOnFrame } = detection
 
   const publish = useCallback(
     (count: number) => {
@@ -161,6 +180,10 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
    */
   const captureAndDetect = useCallback(async () => {
     setShotError(null)
+    if (!isReady) {
+      setShotError('Model not loaded yet — wait for Lumina ready on the main screen')
+      return
+    }
     try {
       const t0 = Date.now()
       const result = await navRef.current?._takeScreenshot(`spike-${t0}`, false)
@@ -175,12 +198,12 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
 
       const t1 = Date.now()
       const uri = path.startsWith('file://') ? path : `file://${path}`
-      const found = await detection.forward(uri, { detectionThreshold: 0.5, inputSize: 384 })
+      const found = await forward(uri, { detectionThreshold: 0.5, inputSize: 384 })
       setShot({ capture, detect: Date.now() - t1, found: found.length })
     } catch (e) {
       setShotError(String(e).slice(0, 140))
     }
-  }, [detection])
+  }, [forward, isReady])
 
   const swap = () => {
     setMode((m) => {
@@ -189,6 +212,31 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
       return target
     })
   }
+
+  const exportSession = useCallback(() => {
+    const payload = {
+      note: 'Add phone model in docs/depth-spike-session.md when pasting',
+      at: new Date().toISOString(),
+      mode,
+      reading,
+      swapMs,
+      shot,
+      shotError,
+    }
+    const json = JSON.stringify(payload, null, 2)
+    // Share sheet + AR session often kills the app on Android — copy + file instead.
+    console.log('[DepthSpike]', json)
+    void (async () => {
+      try {
+        await Clipboard.setStringAsync(json)
+        const path = `${FileSystem.documentDirectory}depth-spike-last.json`
+        await FileSystem.writeAsStringAsync(path, json)
+        setExportNote(`Copied. Also saved on phone: ${path}`)
+      } catch (e) {
+        setExportNote(`Copy failed: ${String(e).slice(0, 80)}`)
+      }
+    })()
+  }, [mode, reading, swapMs, shot, shotError])
 
   return (
     <View style={styles.root}>
@@ -260,10 +308,15 @@ export default function DepthSpike({ onExit }: { onExit: () => void }) {
             </Text>
             {shotError != null ? <Text style={styles.error}>{shotError}</Text> : null}
             <Pressable style={styles.button} onPress={() => void captureAndDetect()}>
-              <Text style={styles.buttonText}>Capture &amp; detect (no swap)</Text>
+              <Text style={styles.buttonText}>Capture & detect (no swap)</Text>
             </Pressable>
           </>
         ) : null}
+
+        <Pressable style={[styles.button, styles.share]} onPress={exportSession}>
+          <Text style={styles.buttonText}>Copy readings to clipboard</Text>
+        </Pressable>
+        {exportNote != null ? <Text style={styles.exportOk}>{exportNote}</Text> : null}
 
         <Pressable style={styles.button} onPress={swap}>
           <Text style={styles.buttonText}>Swap camera owner</Text>
@@ -312,6 +365,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#2B6CB0',
   },
   exit: { backgroundColor: '#3A3A44' },
+  share: { backgroundColor: '#4A5568' },
   error: { color: '#E88', fontSize: 11, marginTop: 4 },
+  exportOk: { color: '#7FD1AE', fontSize: 12, marginTop: 8 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '600' },
 })

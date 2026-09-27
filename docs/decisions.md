@@ -7,6 +7,149 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-09-27 — Phase 4 OCR: `@react-native-ml-kit/text-recognition`, not ExecuTorch's own
+
+**Chose:** the community `@react-native-ml-kit/text-recognition` package (Google ML Kit
+Text Recognition v2, wrapped as a plain RN native module — `src/ocr.ts`, `App.tsx`), a
+new dependency. This is the PRD section 5 decision (ML Kit specifically, for Latin +
+Devanagari), not something decided fresh here.
+
+**Rejected:** `react-native-executorch`'s own bundled OCR (`useOCR`, `useVerticalOCR`,
+already installed, zero new dependency). Worth naming because it's the more obvious
+choice on a fresh look — it's already in the project. Did not switch to it silently: the
+PRD's ML Kit choice was made for Devanagari support specifically (PRD section 2, local
+signage), and nobody has confirmed whether ExecuTorch's bundled model covers that script.
+If it turns out to, revisit — one fewer native dependency is worth it — but that is a
+decision to open, not assume.
+
+**How it's wired:** VisionCamera's `usePhotoOutput` (a second `CameraOutput` alongside
+the existing `frameOutput`, both passed to the one `<Camera>`) captures a still to a
+temp file on request; `TextRecognition.recognize(uri)` reads it; the file is deleted
+straight after (`expo-file-system`'s new `File` API, SDK 57 — the phone has run low on
+storage before, and a photo of someone's surroundings should not sit on disk).
+
+**Confirmed:** typechecks, old-architecture native module (no TurboModule/Codegen spec)
+on a `newArchEnabled: true` project — relies on RN's legacy-interop compatibility layer.
+**Not yet confirmed:** that the interop layer actually works for this module on device;
+needs the native rebuild (`npx expo run:android`) that a plain `npm install` doesn't
+trigger, since this adds Android/Java code, not just JS.
+
+**Trigger: the whole screen (changed same day).** The first version was a labelled
+button, which a blind user cannot find. Now a transparent full-screen `Pressable` sits over
+the camera, with the debug overlay nested inside it so taps on the text bubble up. Sighted
+users tap anywhere. With TalkBack the screen is one element, so its double-tap-to-activate
+works from anywhere. The startup announcement says "Tap anywhere to read text", because
+being told is the only way a blind user learns the gesture exists.
+
+**Rejected:** a volume-button trigger (needs a new native module, since RN cannot see key
+events). A voice command ("read that") (no STT pipeline exists yet). A hand-rolled custom
+double-tap (it fights TalkBack, which already owns double-tap).
+
+**Known risk:** a palm or thumb brushing the glass while walking will trigger a read.
+It is harmless, since it only speaks. If it happens in testing, move to long-press or a
+volume button. `ponytail:` at the site.
+
+**Constrains Phase 5:** "tap" is now taken. "What's around me?" will need a different
+gesture, such as long-press, or a voice command.
+
+## 2026-09-27 — Depth at 140px is fast enough; it now drives haptics, not the bbox size
+
+**Measured on begoniain:** shrinking the export from 252px to **140px** (Depth Anything's
+patch size is 14, so 140 is the smallest clean multiple worth trying) took depth from
+**1297 ms to 330 ms** per frame, verified bit-identical to PyTorch first (`verify2.py`).
+Combined with YOLO's ~105 ms that is ~435 ms/frame — still above the reflex budget in
+PRD section 4, but close enough that riding it as the primary safety signal beats staying
+on a heuristic that cannot see a wall at all.
+
+**Chose:** depth now decides the haptic pattern whenever it has loaded and the frame
+succeeded (`patternForDepth` in `narrationPolicy.ts`, thresholds 0.6 / 1.2 / 2.5 m —
+**guesses**, not measured against a real corridor). The bbox heuristic (`patternFor`,
+`nearestInPath`) is the fallback for while the model is still loading or a frame throws,
+not the steady state anymore. `haptics.ts`'s `pulseFor` was refactored to take an
+already-decided `PulsePattern` rather than compute one from a bbox proximity itself — one
+function, one piece of cooldown state, whichever source is live. Calling it from both
+bbox and depth in the same frame would have double-buzzed.
+
+**Rejected (for now):** pushing further on speed (112px, int8 quantisation) before
+wiring anything up. Decided the pipeline was worth proving end-to-end at 330 ms first;
+if 435 ms/frame turns out to visibly lag underfoot, revisit — the options are recorded
+in the 2026-09-26 entry below and still apply.
+
+**Confirmed on device:** app does not crash, no ExecuTorch errors in logcat, overlay
+reads `path proximity: 2.1 m (depth) · haptic: far` — consistent with the L/C/R readings
+and `patternForDepth`'s thresholds. **Not confirmed:** whether 2.1 m was the *true*
+distance to anything in frame — no tape measure was used. Depth accuracy against ground
+truth is still an open item; see STATUS.md section 5.
+
+## 2026-09-26 — Depth via a custom "segmentation" model; fp32 is too slow
+
+**Chose:** run Depth Anything V2 **Metric-Indoor-Small** through
+`SemanticSegmentationModule.fromCustomModel` (`src/useDepth.ts`), not a new library.
+`react-native-executorch` 0.9.3 has no depth model, but for a single-channel `[1,1,H,W]`
+output the native runtime returns the values **raw** as `FOREGROUND` (no sigmoid or
+softmax; `BaseSemanticSegmentation.cpp` `computeResult`, `numChannels == 1`). So a depth
+model exported to that contract comes back in metres through the same `runOnFrame`
+worklet path YOLO uses. Export: `scripts/export_depth.py`.
+
+**Rejected:**
+- `useExecutorchModule` (generic). `forward()` takes JS-side `TensorPtr[]`, no
+  `runOnFrame`, so every frame would be copied into JS and resized there. Defeats the
+  reason for choosing this stack (PRD section 5).
+- Relative-depth Depth Anything V2 (the plain "small"). Outputs disparity with an unknown
+  scale per image, so "1 m" is not a number. Metric-Indoor gives metres directly.
+- Waiting on an upstream depth model. Blocks Phase 3 with no date.
+
+**Measured on begoniain (2026-09-26, fp32, 252x252, XNNPACK CPU, alongside YOLO):**
+YOLO 139 ms, depth **1297 ms** per frame. Far over the reflex budget (PRD section 4), so
+**depth cannot drive haptics as exported.** Not yet measured against a real scene: the
+preview was black during the run, so the 1.2 m L/C/R reading proves the pipeline, not
+accuracy.
+
+**What would change our mind / next options, cheapest first:** smaller input (196 or 140),
+run depth every Nth frame and hold the last value, int8 XNNPACK quantisation (~4x smaller,
+usually faster), or a different model. If none gets under ~300 ms on this phone, depth
+stays an on-demand check and haptics stay on the bbox heuristic.
+
+**Toolchain gotchas** (cost time, not obvious): `executorch` 1.2.0's compiled bindings
+need `torch==2.11.0` exactly (pip resolves 2.14 and it fails with an undefined symbol);
+`flatc` lives in the venv `bin` and must be on `PATH` when exporting; python3.13 without
+the venv package needs `venv --without-pip` then `get-pip.py`. Runtime version inside
+`react-native-executorch` 0.9.3 could not be read; the 1.2.0 export loaded fine.
+
+## 2026-09-23 — Depth spike on Redmi Note 8 Pro: rays fail, still-shot YOLO passes
+
+**Device:** Redmi Note 8 Pro (`begoniain`). Logs in [`depth-spike-session.md`](depth-spike-session.md).
+
+**Chose (for Phase 3 next work):** treat **monocular depth on existing VisionCamera
+frames** (Depth Anything V2-small → ExecuTorch) as the primary path to real obstacle
+distance on phones where Viro hit tests do not return depth. Keep **bbox heuristic**
+haptics until that lands.
+
+**Chose (timing):** **on-demand** object naming from a still is fast enough when we have
+one — screenshot → `forward()` measured **358–592 ms** total (typical ~400 ms), within the
+team’s ~600 ms bar. That does **not** require swapping camera owners during a walk.
+
+**Rejected (on this device, this spike build):** **ARCore/Viro three-ray continuous depth**
+for haptics. Every `performARHitTestWithPoint` reading was `depth: null`, `source: "none"`.
+Cannot validate walls/glass/doorway via rays; cannot commit to “ARCore holds the camera
+permanently + automatic 3-ray buzz” on begoniain from this data.
+
+**Rejected (reconfirmed):** **Swapping** ARCore ↔ VisionCamera while walking. Swap to
+camera **1145 ms** on this session (consistent with ~1.2 s measured earlier on A001).
+
+**Rejected for now:** Assuming the August note “ARCore works in software” means **this**
+Viro spike path is production-ready without a per-device spike pass.
+
+**Still open:** Run the same spike on **A001** (Android 16). If rays work there, ARCore-first
+architecture may remain valid for that hardware while begoniain uses ExecuTorch depth on
+VisionCamera. M6 (Cloud Anchors) may still force ARCore on some devices regardless.
+
+**Would change our mind:** Non-null depths with `source: arcore` on begoniain after a
+documented retry (tracking init, lighting, permissions); or Depth Anything on CPU proves
+too slow on device.
+
+---
+
 ## 2026-08-23 — Haptics ship on a proximity heuristic, not real depth
 
 **Chose:** estimate proximity from where a bounding box's *base* sits in the frame, and

@@ -71,6 +71,17 @@ Accept the RSA prompt on the phone when it appears.
 Same idea: JDK 17, Android SDK + NDK, `adb` on PATH, udev rules so your user can
 talk to the device. On Ubuntu the udev package is `android-sdk-platform-tools-common`.
 
+If Gradle says **SDK location not found**, either export `ANDROID_HOME` in your shell
+or create `android/local.properties` (gitignored) with one line:
+
+```properties
+sdk.dir=/absolute/path/to/Android/Sdk
+```
+
+If native builds fail with **no space left on device** while disk looks fine, check
+`df -h /tmp` — Gradle/Kotlin use `/tmp`; clear old `cursor-sandbox-cache` or
+`metro-cache` if it is full.
+
 ---
 
 ## 3. Run it

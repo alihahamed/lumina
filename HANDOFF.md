@@ -86,59 +86,61 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
 
 ---
 
-## Current session — 2026-08-23
+## Current session — 2026-09-27
 
 **Overwrite this section next session.**
 
 ### Done
 
-- Scaffolded the app; got camera → YOLO26n → speech working on a real device
-- Fixed four blocking runtime bugs: missing babel config, missing ExecuTorch resource
-  fetcher, minSdk 24 vs HardwareBuffers, wrong pixel format
-- Rewrote narration: direction zones, announce-changes-not-state, backoff, ranking,
-  global floor. Fixed repeat-announcement bug (zone flicker + short memory)
-- Added haptics on a proximity heuristic; replaced an unlearnable sliding pulse rate
-  with three distinct patterns
-- Built `src/DepthSpike.tsx` to decide the depth architecture
+- **Depth now drives haptics.** Re-exported Depth Anything V2 Metric-Indoor at 140px
+  (down from 252px): 1297 ms → **330 ms/frame**, verified bit-identical to PyTorch.
+  `patternForDepth` (`narrationPolicy.ts`) decides the buzz pattern from the centre
+  zone's metres whenever depth is loaded and healthy; the old bbox heuristic
+  (`patternFor`/`nearestInPath`) is now only the fallback. `haptics.ts pulseFor` takes
+  an already-decided pattern so only one source ever fires it. Confirmed on device: no
+  crash, overlay reads `2.1 m (depth) · haptic: far` consistently. See
+  `docs/decisions.md` 2026-09-27.
+- Fixed narration never saying "on your right" (2026-09-26 work, `App.tsx onFrame`
+  portrait/landscape mix-up). **Confirmed on a real object this session.**
+- Fixed the depth-driven buzz firing on almost every frame near a threshold: added
+  `stablePatternForDepth` (hysteresis, same idea as `zoneOf`'s zone margin). Confirmed on
+  device: steady reading gives occasional pulses, not continuous ones.
+- **Phase 4 OCR works on device.** `src/ocr.ts` (`@react-native-ml-kit/text-recognition`) plus
+  VisionCamera `usePhotoOutput`. Read a book correctly. The trigger is **tap anywhere**
+  (a full-screen `Pressable`), and startup announces it. Tap-anywhere confirmed by hand. See `docs/test-checklist.md` Phase 4.
+- **adb cannot tap on begoniain.** MIUI drops `input tap` silently. Test UI by hand.
+- M7 Supabase migration and M8 Hono `/describe` written, not deployed (`docs/feature.md`).
 
-### The live question
+### The live question, and a new risk
 
-**How do we measure distance?** Blocking phase 3 properly and shaping phases 4–7.
+**Is 2.1 m actually 2.1 m?** No tape measure has been used yet. Point the phone at a
+doorway or wall at a known distance and check the overlay's L/C/R numbers, and check that
+walking toward a wall actually escalates far → near → imminent.
 
-Established so far:
+**Update:** a second crash, and both hit the process being torn down by a reload. The
+likely cause is a teardown race. `useDepth` now defers `delete()` by 1.5 s. This is
+mitigated, not proven fixed. See `docs/bug.md`.
 
-- Test phone has **no depth hardware** (`dumpsys media.camera`, no `DEPTH_OUTPUT`)
-- ARCore works in software, is installed, and ViroReact exposes `depthValue` via
-  `performARHitTestWithPoint`
-- Only one library can hold the camera. **Swapping costs ~1.2s each way — measured.**
-  Too slow to do while walking
-- ViroReact's `takeScreenshot()` returns a file path, and ExecuTorch's `forward()` accepts
-  a path — so ARCore could hold the camera permanently and naming could run off a still,
-  with no swap at all
+**Original note — a native crash happened once, on a relaunch, in the depth path** — `SIGSEGV` inside
+ExecuTorch's `Method::outputs_size()`, called from the custom segmentation `execute()`.
+Full trace and hypotheses: `docs/bug.md` 2026-09-27. Root cause is **not confirmed** — it
+ran crash-free for several minutes both before and after this one occurrence. This is not
+catchable from JS. **Do not demo this to anyone, or treat it as safe, until this is
+understood or reproduced enough to rule out.** This matters more than the accuracy
+question: a wrong number is a bad warning, a crash is no warning and takes the fallback
+down with it.
 
-Proposed architecture, **not yet confirmed**:
+~435 ms/frame combined (yolo + depth) is still above the reflex budget in PRD section 4.
+If it visibly lags underfoot, the next moves are 112px, int8 quantisation, or depth every
+Nth frame holding the last value — options recorded in `docs/decisions.md`.
 
-```
-ARCore holds the camera permanently
-  ├─ three depth rays (left/centre/right) → continuous, automatic haptics
-  └─ on request: screenshot → YOLO / OCR / VLM for naming
-```
-
-### Next action
-
-Run the spike on device (button in the debug overlay) and record:
-
-- Do the three distances match reality? Does a **glass door** register?
-- Does `source` say `arcore`?
-- Capture + detect time — under ~600ms settles the architecture
-
-Then write the decision into `docs/decisions.md` either way, and delete `DepthSpike.tsx`.
-
-**If the spike fails:** fall back to converting Depth Anything V2-small to ExecuTorch and
-running it beside YOLO on existing frames. No camera conflict, but unproven, and two
-models on a CPU may be too slow.
+The model is **adb-pushed**, not shipped: `/data/user/0/com.lumina.app/files/depth140.pte`.
+Reinstalling the app deletes it. Re-push with `run-as com.lumina.app cp` (see
+`src/useDepth.ts`). Export toolchain lives in a scratchpad venv that will be gone; the
+recipe and its traps are in `scripts/export_depth.py` and `docs/decisions.md`.
 
 ### Unverified
 
-Nobody has run the cadence or blindfold tests. The narration and haptic constants have
-never been checked by a human walking a corridor. Battery and heat are unmeasured.
+Depth accuracy against ground truth. Whether the SIGSEGV recurs. Cadence and blindfold
+tests, battery and heat. `/describe` against live Gemini, the SQL against real Postgres.
+Nothing committed.

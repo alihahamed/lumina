@@ -2,6 +2,146 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
+## 2026-09-27 — Native SIGSEGV in ExecuTorch during depth inference
+
+**Status:** mitigated, not proven fixed. **Two occurrences, both during a reload/relaunch.**  
+**Files:** `src/useDepth.ts` (the custom segmentation path), native library only
+
+### Symptom
+
+App process died outright (not a JS error — a full crash) shortly after relaunching,
+while depth had just become ready. `adb logcat` briefly reported "no devices" at the
+same time, then the phone reconnected on its own.
+
+### What the log shows
+
+```
+Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x28 (tid ...lo.camera.frame)
+#00 executorch::runtime::Method::outputs_size() const
+#01 executorch::extension::module::Module::execute(...)
+#02 rnexecutorch::...BaseSemanticSegmentation::runInference(...)
+#03 rnexecutorch::...BaseSemanticSegmentation::generateFromFrame(...)
+```
+
+Small fault offset (0x28) on a `Method` object inside `execute()` — reads like the
+native method table wasn't valid yet, or was torn down concurrently. This is **not
+catchable from JS**: `useDepth.ts`'s try/catch around `depthRun(...)` cannot stop a
+native segfault, only a thrown JS exception.
+
+### Second occurrence (16:25) narrows it down
+
+```
+#00 libhermesvm.so
+#01-#04 libworklets.so (RuntimeDecorator / WorkletsReentrancyCheck / AroundLock)
+#05 rnexecutorch::makeRnExecutorchErrorValue(...)
+#06 rnexecutorch::ModelHostObject<semantic_segmentation...>
+```
+
+The depth call failed, and ExecuTorch crashed while building the JS error object on a
+worklet runtime that was already going away. It hit the **old** process being replaced,
+right after a Fast Refresh from a code edit and a force-stop, and not the fresh process.
+Both crashes line up with teardown. That points to a **teardown race**: React unmounts,
+`useDepth`'s cleanup deleted the module immediately, and the camera-frame thread was
+still mid-call. Depth takes ~330 ms per call against YOLO's ~105 ms, a 3x larger window,
+which fits it being the one that crashes.
+
+### Mitigation (2026-09-27)
+
+`useDepth` cleanup now sets the instance to null first, so `onFrame` rebinds without
+depth, and only calls `delete()` after `DELETE_GRACE_MS` (1.5 s, longer than any depth
+call). **This covers unmount and Fast Refresh, not a full JS runtime teardown**, where the
+timer never fires. That case needs a native-side guard in the library. `ponytail:` at the site.
+
+**How we will know:** reload the app many times over while it runs (edit and save any JS
+file) and grep logcat for `Fatal signal`. Not done yet. Until then, treat it as mitigated,
+not fixed. It has **never** been seen during steady running, only at reload.
+
+### What is NOT confirmed
+
+- Whether this is a race between the JS `isReady` flag and the native side finishing
+  its own setup (plausible: `isReady` flips as soon as the promise resolves, which may
+  be before the native method table is fully committed).
+- Whether it is specific to running YOLO and the custom depth model back to back in the
+  same frame callback (two native `Module` instances active at once).
+- Whether it recurs under sustained use — the app ran fine for several minutes across
+  earlier sessions before this happened once, on a relaunch.
+
+### How to pick this up
+
+Reproduce deliberately: relaunch repeatedly and watch `adb logcat -d | grep -iE
+"Fatal signal|executorch"` each time. If it recurs specifically right after `isReady`
+flips, try a short delay before the first `depthRun` call. If it recurs under sustained
+running instead, suspect the two-model interaction and test depth alone (temporarily
+skip the YOLO call) to isolate it.
+
+### Why this matters more than the accuracy question
+
+A wrong distance reading is a bad warning. A crash is no warning at all, and it takes
+narration and the working bbox fallback down with it. **Do not treat depth-driven
+haptics as safe to demo or test with a blind user until this is understood — not
+because of the numbers, because of this.**
+
+## 2026-09-26 — Narration never says "on your right"; proximity inflated
+
+**Status:** fixed in code, **not yet verified on device**  
+**Files:** `App.tsx` (`onFrame`)
+
+### Symptom
+
+Objects were only ever announced "ahead" or "on your left", never "on your right". Haptics
+also seemed to fire earlier than the object's real distance.
+
+### Root cause
+
+`onFrame` passed `frame.width` / `frame.height` to `toCandidates`. On Android the buffer is
+sensor-native landscape (e.g. 640x480), but ExecuTorch's `ObjectDetection::generateFromFrame`
+returns bboxes already rotated to portrait screen space (x in 0-480, y in 0-640;
+see `FrameTransform.cpp` `inverseRotateBbox`). So `zoneOf` split 640 into thirds and the
+right zone began at x > 427, which a 480-wide box centre almost never reaches. Same mix-up made
+`proximityOf` divide `y2` by 480 instead of 640, inflating proximity by about a third.
+
+### Fix
+
+Pass `min(frame.width, frame.height)` as the width and `max(...)` as the height. Valid because
+`app.json` locks orientation to portrait. Marked `ponytail:` at the site: derive from
+`frame.orientation` if we ever unlock rotation.
+
+### How we know
+
+`npm test` and `npm run typecheck` pass, but neither exercises this. **Still to confirm on
+the phone:** an object on the right edge reads "on your right", and the debug overlay's path
+proximity is lower for the same object than before. Not ticked in `test-checklist.md` until
+someone runs it.
+
+## 2026-09-23 — Depth spike: `[BaseModel.cpp] Model not loaded` on Capture & detect
+
+**Status:** fixed  
+**Files:** `src/DepthSpike.tsx`, `App.tsx`
+
+### Symptom
+
+Tapping **Capture & detect** in the depth spike (or sporadically in Metro logs) threw
+`Model not loaded` from ExecuTorch `BaseModel::getAllInputShapes`.
+
+### Root cause
+
+`DepthSpike` called `useObjectDetection` while `App` still mounted its own hook. Two
+YOLO26n loads fought for the same native runtime; the spike's `forward()` often ran before
+its second model finished loading (or never loaded).
+
+### Fix
+
+Pass the **single** `detection` object from `App.tsx` into `DepthSpike`. Guard
+`captureAndDetect` when `!isReady`. Disable **Open depth spike** until the main model is
+ready.
+
+### How we know
+
+`npm run typecheck` passes; Capture & detect uses the already-loaded model from the main
+screen.
+
+---
+
 ## 2026-08-23 — Same object announced repeatedly as it enters and leaves frame
 
 **Status:** fixed

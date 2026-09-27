@@ -110,9 +110,36 @@ overlay exists so you can check the heuristic against reality — watch it while
 
 ---
 
-## Phase 4+ — add sections as phases land
+## Phase 4 — on-demand text reading (OCR)
 
-OCR, cloud VLM, spatial memory. Each gets its own section here before it is called
+Tap by hand. `adb shell input tap` is silently ignored on begoniain (MIUI), see
+`feature.md`.
+
+### Does it read
+- [x] Button version: point at a printed book, trigger, text is spoken correctly
+      (2026-09-27, begoniain, by hand)
+- [x] Tap-anywhere version reads text (2026-09-27, begoniain, by hand. Which of the
+      three spots were tried was not recorded, so re-check the debug text and the bottom edge)
+- [ ] The "Open depth spike" button still opens the spike and does **not** also read
+- [ ] Startup says "Lumina ready. Tap anywhere to read text."
+- [ ] Nothing readable in view: says "No text found" rather than staying silent
+- [ ] A room-number plate or door sign at 1–2 m, not just a book held close. Pass means
+      the number comes out right
+
+### Failure cases
+- [ ] Tap twice fast: one read, not two overlapping
+- [ ] Airplane mode on: still reads (ML Kit is on-device)
+- [ ] Dim corridor: note whether it reads or says "No text found"
+- [ ] After ten reads, no photos are left in the app's cache (`run-as com.lumina.app ls cache`)
+- [ ] Carry the phone for a minute: count the accidental reads from palm or thumb touches
+
+### Blindfold test
+- [ ] Screen off in your mind, eyes closed. Can you find and read a door sign using only
+      the startup hint and tap-anywhere?
+
+## Phase 5+ — add sections as phases land
+
+Cloud VLM, spatial memory. Each gets its own section here before it is called
 done, and every one of them needs the failure cases and the blindfold test.
 
 **Never test with a real blind user without a sighted spotter present.**
