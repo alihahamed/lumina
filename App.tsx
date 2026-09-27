@@ -1,7 +1,7 @@
 import { File } from 'expo-file-system'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
-import { models, useObjectDetection } from 'react-native-executorch'
+import { models, useImageEmbeddings, useObjectDetection } from 'react-native-executorch'
 import type { Frame } from 'react-native-vision-camera'
 import {
   Camera,
@@ -26,9 +26,13 @@ import {
   type ZoneMemory,
 } from './src/narrationPolicy'
 import type { ZoneDepths } from './src/depthZones'
-import { alert, narrate, resetNarrator } from './src/narrator'
+import { alert, narrate, resetNarrator, setNarrationPaused } from './src/narrator'
 import { readText } from './src/ocr'
 import { DescribeError, describeScene } from './src/describe'
+import * as Haptics from 'expo-haptics'
+import { parseCommand } from './src/commands'
+import { matchPlace, savePlace } from './src/places'
+import { useVoiceCommand } from './src/useVoiceCommand'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
 // 100-300 ms a frame. Capping the whole pipeline is cheaper than throttling
@@ -37,6 +41,8 @@ import { DescribeError, describeScene } from './src/describe'
 const TARGET_FPS = 8
 const MIN_SCORE = 0.5
 const INPUT_SIZE = 384
+
+type Busy = 'reading' | 'describing' | 'saving' | 'locating'
 
 type DepthStats = {
   yoloMs: number
@@ -74,7 +80,7 @@ export default function App() {
   // first launch — ponytail: make that opt-in and Wi-Fi-only before real users.
   const offline = useOfflineDescriber()
   // One on-demand request at a time: OCR and describe share the one photo output.
-  const [busy, setBusy] = useState<'reading' | 'describing' | null>(null)
+  const [busy, setBusy] = useState<Busy | null>(null)
   // Debug only, like depthStats — lets us confirm a result without needing to hear
   // the phone's TTS. ponytail: delete once both have been verified a few times.
   const [lastResult, setLastResult] = useState<string | null>(null)
@@ -85,7 +91,7 @@ export default function App() {
    */
   const withStill = useCallback(
     async (
-      kind: 'reading' | 'describing',
+      kind: Busy,
       start: string,
       work: (uri: string) => Promise<string>,
       fallback: string,
@@ -159,6 +165,82 @@ export default function App() {
     [withStill, offline],
   )
 
+  // Phase 6: place memory, recognition first (docs/decisions.md). CLIP ViT-B/32 int8,
+  // 512 numbers, L2-normalised — measured to match the schema's vector(512).
+  const clip = useImageEmbeddings({ model: models.image_embedding.clip_vit_base_patch32_image() })
+
+  const saveNow = useCallback(
+    (label: string) =>
+      withStill(
+        'saving',
+        'Saving',
+        async (uri) => {
+          if (!clip.isReady) return 'Place memory is still loading. Try again in a moment.'
+          await savePlace(label, await clip.forward(uri))
+          return `Saved as ${label}.`
+        },
+        'Could not save that place. Check the internet connection.',
+      ),
+    [withStill, clip],
+  )
+
+  const whereNow = useCallback(
+    () =>
+      withStill(
+        'locating',
+        'Checking',
+        async (uri) => {
+          if (!clip.isReady) return 'Place memory is still loading. Try again in a moment.'
+          const { match, top } = await matchPlace(await clip.forward(uri))
+          // The top similarity even when it misses, so the threshold can be tuned.
+          console.log('place match', JSON.stringify(top))
+          if (match != null) return `You're at ${match.label}.`
+          return top == null ? 'No places are saved yet.' : "I don't recognise this place."
+        },
+        'Could not check. Check the internet connection.',
+      ),
+    [withStill, clip],
+  )
+
+  // Hold-and-speak: what was heard becomes one of the actions above.
+  const runCommand = useCallback(
+    (heard: string) => {
+      setNarrationPaused(false)
+      const cmd = parseCommand(heard)
+      setLastResult(`heard: "${heard}" → ${cmd.kind}`)
+      switch (cmd.kind) {
+        case 'describe':
+          return void describeNow()
+        case 'read':
+          return void readNow()
+        case 'save':
+          return void saveNow(cmd.label)
+        case 'whereami':
+          return void whereNow()
+        case 'unknown':
+          return alert(
+            heard.trim() === ''
+              ? "I didn't catch that."
+              : `I heard ${cmd.heard}. Say what's around me, save this as a name, or where am I.`,
+          )
+      }
+    },
+    [describeNow, readNow, saveNow, whereNow],
+  )
+  const voiceFailed = useCallback((why: string) => {
+    setNarrationPaused(false)
+    alert(why)
+  }, [])
+  const voice = useVoiceCommand(runCommand, voiceFailed)
+  const holding = useRef(false)
+
+  const startListening = useCallback(() => {
+    // A tick, not a spoken prompt: the mic would transcribe our own voice.
+    setNarrationPaused(true)
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+    void voice.start()
+  }, [voice])
+
 
   useEffect(() => {
     if (!hasPermission) void requestPermission()
@@ -167,7 +249,9 @@ export default function App() {
   useEffect(() => {
     // The only way a blind user learns the screen is a button is being told so.
     if (isReady)
-      alert('Lumina ready. Tap anywhere to read text. Press and hold to hear what is around you.')
+      alert(
+        "Lumina ready. Tap anywhere to read text. Hold anywhere and speak: what's around me, save this as a name, or where am I.",
+      )
     return () => {
       resetNarrator()
       resetHaptics()
@@ -332,9 +416,11 @@ export default function App() {
         On-demand triggers: the whole screen. A blind user cannot find a button, but can
         always touch the glass.
           tap anywhere        → read text (Phase 4)
-          press and hold      → describe the scene (Phase 5, cloud)
+          hold and speak      → a voice command (Phase 6): "what's around me",
+                                "save this as …", "where am I", "read this"
         TalkBack: the screen is one element. Double-tap reads, double-tap-and-hold
-        describes, and both are also in its actions menu (accessibilityActions).
+        listens, and both are also in its actions menu (accessibilityActions); from
+        the menu, listening ends by itself after a pause.
 
         The overlay is nested inside so touches on the debug text bubble up to here;
         the Camera stays a sibling underneath so its own native touch handling is
@@ -348,18 +434,26 @@ export default function App() {
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={() => void readNow()}
-        onLongPress={() => void describeNow()}
+        onLongPress={() => {
+          holding.current = true
+          startListening()
+        }}
+        onPressOut={() => {
+          // Letting go ends the command. A plain tap never set `holding`.
+          if (holding.current) voice.stop()
+          holding.current = false
+        }}
         disabled={busy != null}
         accessibilityRole="button"
         accessibilityLabel="Lumina camera"
-        accessibilityHint="Double tap to read text. Double tap and hold to describe what is around you."
+        accessibilityHint="Double tap to read text. Double tap and hold, then speak a command."
         accessibilityActions={[
           { name: 'activate', label: 'Read text' },
-          { name: 'longpress', label: 'Describe surroundings' },
+          { name: 'longpress', label: 'Speak a command' },
         ]}
         onAccessibilityAction={(e) => {
           if (e.nativeEvent.actionName === 'activate') void readNow()
-          else if (e.nativeEvent.actionName === 'longpress') void describeNow()
+          else if (e.nativeEvent.actionName === 'longpress') startListening()
         }}
       >
       {/* Debug overlay. The real user is blind — this exists for us, not them. */}
@@ -419,7 +513,7 @@ export default function App() {
           ))
         )}
         <Text style={styles.detail}>
-          {busy != null ? `${busy}…` : 'tap: read text · hold: describe scene'}
+          {voice.listening ? 'listening…' : busy != null ? `${busy}…` : 'tap: read text · hold: speak a command'}
         </Text>
       </View>
       </Pressable>

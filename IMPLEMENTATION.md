@@ -22,6 +22,9 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | OCR | `@react-native-ml-kit/text-recognition` (Google ML Kit) | 2.0.0, on-demand only |
 | Cloud VLM | Gemini 3.1 Flash-Lite, 3.5 fallback, via `backend/` | on-demand only |
 | Offline VLM | LFM2.5-VL-450M (8da4w), via ExecuTorch `useLLM` | fallback only, 649 MB |
+| Place descriptors | CLIP ViT-B/32 image, int8, via ExecuTorch `useImageEmbeddings` | 512-dim, 96 MB |
+| Speech-to-text | `expo-speech-recognition` (Android SpeechRecognizer) | 57.1.0 |
+| DB | `@supabase/supabase-js` + `react-native-url-polyfill`, anonymous auth | 2.117.2 |
 | AR | `@reactvision/react-viro` → ARCore | spike only, not in the main path |
 | Speech | `expo-speech` (system TTS) | SDK 57 |
 | Vibration | `expo-haptics` | SDK 57 |
@@ -45,6 +48,11 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | `src/useDepth.ts` | Loads the custom depth `.pte` via `SemanticSegmentationModule.fromCustomModel`, exposes `runOnFrame`. Drives haptics as of 2026-09-27; model is adb-pushed, not shipped |
 | `src/depthZones.ts` | Depth map to left/centre/right nearest-decile metres. Pure, tested by `depthZones.test.ts` |
 | `scripts/export_depth.py` | Depth Anything V2 Metric-Indoor-Small to XNNPACK `.pte`. Needs its own Python venv, see `docs/decisions.md` 2026-09-26 |
+| `src/commands.ts` | Transcript → command (`describe`, `read`, `save`, `whereami`, `unknown`). Pure, tested |
+| `src/useVoiceCommand.ts` | Hold-and-speak via `expo-speech-recognition`; one result per session |
+| `src/supabase.ts` | Supabase client, anonymous sign-in, session persisted with `expo-file-system` |
+| `src/places.ts` | `savePlace` / `matchPlace` against `routes` + `anchors` + `match_anchors` |
+| `src/placeMatch.ts` | `MATCH_THRESHOLD`, `bestMatch`, `toPgVector`. Pure, tested |
 | `src/useOfflineDescriber.ts` | Phase 7: LFM2.5-VL-450M via `useLLM`. `describeOffline(uri)` is the no-network fallback inside `describeNow` |
 | `src/text.ts` | `firstSentences()` for speech, pure, tested by `text.test.ts` |
 | `src/describe.ts` | Phase 5: base64 still → backend `/describe` → spoken text. Errors are phrased to be spoken |
@@ -160,7 +168,7 @@ Device checks, including known blind spots: [`docs/test-checklist.md`](docs/test
 
 Phases 5–7, and part of 4. Nothing below exists:
 
-- Route saving and recall (CLIP descriptors + Supabase/pgvector, 512-dim)
+- Guidance between saved places (needs ARCore VIO; recognition exists, see Phase 6)
 - Deployed backend. `backend/` (Hono `/describe`) and `supabase/migrations/0001_routes_anchors.sql`
   are written and locally checked but **not deployed and not called by the app**.
 

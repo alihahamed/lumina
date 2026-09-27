@@ -20,6 +20,16 @@
           }
         }
       ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Lumina listens only while you hold the screen, to hear your command.",
+          "speechRecognitionPermission": "Lumina turns your spoken command into text.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ],
       "@reactvision/react-viro"
     ],
     "android": {

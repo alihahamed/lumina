@@ -7,6 +7,42 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-09-27 — Phase 6: recognition first, hold-and-speak, anonymous Supabase users
+
+**Chose — recognition, not guidance.** "Save this as the kitchen" stores a CLIP
+descriptor of the current view; "where am I" names the closest saved place when it is
+close enough. No turn-by-turn guidance between places. That needs ARCore VIO, which must
+own the camera and would switch off detection, depth, OCR and describe. ARCore also
+returned no depth on begoniain (2026-09-23). **Rejected for now:** the PRD's full
+ARCore + Cloud Anchors design. Revisit on a phone where ARCore tracking is proven.
+
+**Chose — hold-and-speak voice commands** (`src/useVoiceCommand.ts`,
+`src/commands.ts`, `expo-speech-recognition` 57.1.0). Hold is the one gesture for
+everything spoken: "what's around me", "save this as …", "where am I", "read this".
+Tap stays as read-text. A haptic tick, not speech, signals listening, because the mic
+would transcribe our own voice. Narration pauses while listening; haptics never do.
+**Rejected:** another gesture for saving (clashes with TalkBack, and does not scale).
+
+**Chose — anonymous Supabase sign-in**, with the session kept in a file via
+`expo-file-system` (`src/supabase.ts`). **Rejected:** email/password (a blind user should
+not have to type credentials), and AsyncStorage (a new native module and another
+rebuild, when `expo-file-system` was already in the build). The session must survive
+restarts. A new anonymous user each launch would lose every saved place, because RLS
+scopes places to the user.
+
+**CLIP descriptor verified against the schema:** the library's int8 CLIP ViT-B/32 image
+model outputs `(1, 512)`, already L2-normalised. It was run on the laptop before the
+migration was applied, so `vector(512)` + cosine is correct as written.
+
+**Verified against the live project** (2026-09-27, with throwaway users): a save matched
+itself at 1.0 and an unrelated vector at 0.04. A second user could not list, match or
+insert into the first user's places (403 on insert).
+
+**Threshold `MATCH_THRESHOLD = 0.85` (a guess, `ponytail:`).** On the phone the saved
+spot matched at **0.92** and was named. A different, unsaved room was **not** named.
+After it was saved as "dining room", it was. The non-match score still needs to be read
+from the log to know the margin. If other rooms score close to 0.85, raise it.
+
 ## 2026-09-27 — Phase 7: LFM2.5-VL-450M on the phone, only when the cloud fails
 
 **Chose:** `models.llm.lfm2_5_vl_450m()` from react-native-executorch, the PRD's model

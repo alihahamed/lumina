@@ -4,6 +4,8 @@ import { type Candidate, selectAnnouncement, type Tracks } from './narrationPoli
 const tracks: Tracks = new Map()
 let lastSpokeAt = -Infinity
 let speaking = false
+// True while the user is speaking a command: the mic would transcribe our narration.
+let paused = false
 
 const finished = () => {
   speaking = false
@@ -18,6 +20,7 @@ const finished = () => {
  * @returns what was said, or null for silence.
  */
 export function narrate(candidates: Candidate[], now: number = Date.now()): string | null {
+  if (paused) return null
   const pick = selectAnnouncement(candidates, now, tracks, lastSpokeAt, !speaking)
   if (pick == null) return null
 
@@ -38,10 +41,23 @@ export function alert(text: string, now: number = Date.now()): void {
   Speech.speak(text, { onDone: finished, onStopped: finished, onError: finished })
 }
 
+/**
+ * Silences narration (and cuts off anything mid-sentence) while the user speaks a
+ * command. Haptics are not affected: the safety layer never pauses.
+ */
+export function setNarrationPaused(p: boolean): void {
+  paused = p
+  if (p) {
+    Speech.stop()
+    speaking = false
+  }
+}
+
 /** Clears all cooldowns and stops speech. Call when a session ends. */
 export function resetNarrator(): void {
   tracks.clear()
   lastSpokeAt = -Infinity
   speaking = false
+  paused = false
   Speech.stop()
 }

@@ -169,9 +169,28 @@ backend over USB.
 - [ ] Hold again straight after: no crash, no overlap
 - [ ] Hold right after launch: is the photo black? (open question, `decisions.md`)
 
-## Phase 6+ — add sections as phases land
+## Phase 6 — remember places, voice commands
 
-Spatial memory. Each gets its own section here before it is called
+Needs the root `.env` Supabase values and internet. Hold anywhere until the buzz, speak,
+then let go.
+
+- [x] "where am I" with nothing saved says "No places are saved yet" (2026-09-27)
+- [x] "save this as …" then "where am I" at the same spot names it (0.92, 2026-09-27)
+- [x] "where am I" in an unsaved room does **not** name another room (2026-09-27)
+- [x] A second room saved ("dining room") is then named there (2026-09-27)
+- [ ] The **score** in an unsaved room, read from the log (`place match`). How close to
+      0.85? This decides whether the threshold is safe
+- [ ] Same spot, different lighting (day and night), still named?
+- [ ] Two similar rooms (two bedrooms): never swapped?
+- [ ] Mumbled or unknown command: says what it heard and does nothing else
+- [ ] Narration is silent while holding; haptics still buzz
+- [ ] TalkBack: double-tap-and-hold, speak, the command runs
+- [ ] No internet: save and where-am-I fail with a spoken reason, no crash
+- [ ] Airplane mode: does voice recognition still work? (Android 11 offline pack)
+
+## Phase 6+ — guidance between places
+
+Not built. Needs ARCore VIO on a phone where it works. Each gets its own section here before it is called
 done, and every one of them needs the failure cases and the blindfold test.
 
 **Never test with a real blind user without a sighted spotter present.**

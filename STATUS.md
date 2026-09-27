@@ -29,6 +29,8 @@ Running on a real phone (A001, Android 16):
   at a time, never more than one utterance every 2.5s
 - Phone vibrates for things in your path, three distinct patterns by closeness
 - Debug overlay showing detections, dropped frames, proximity, haptic pattern
+- **Hold and speak**: "what's around me" (cloud, offline fallback), "save this as …",
+  "where am I" (as of 2026-09-27)
 - **Tap anywhere on the screen to read text aloud** (ML Kit OCR, on-device), as of
   2026-09-27 on begoniain
 
@@ -161,7 +163,7 @@ policy.
 | 3 | Obstacle warning via vibration | depth wired to haptics on begoniain (2026-09-27); **accuracy unconfirmed**, see section 5 |
 | 4 | Read signs and room numbers on demand (ML Kit, offline, free) | **working on device** (read a book, 2026-09-27); tap-anywhere trigger, checklist open |
 | 5 | "What's around me?" via cloud VLM (Gemini free tier) | built; backend answers in 2–4 s via Gemini 3.1 Flash-Lite (3.5 fallback). **works on the phone** (2026-09-27) |
-| 6 | Save and recall routes | schema written, not deployed (`supabase/migrations/`) |
+| 6 | Save and recall routes | **recognition works on the phone** (save by voice, "where am I"). Guidance between places not built |
 | 7 | Offline VLM fallback when there is no network | **model works on the phone** (LFM2.5-VL-450M, ~14 s); fallback works by hand and matched the scene (16.6 s) |
 
 **Phases 1–4 are a complete, useful, fully offline app.** If the semester runs out there,

@@ -5,6 +5,48 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-09-27 — Phase 6: remember places, and voice commands
+
+**Status:** **working on the phone** (begoniain, 2026-09-27). It saved "bedroom number one
+door" and later named it (similarity 0.92). An unsaved room was not named; after saving
+it as "dining room", it was.
+**Covers:** `PRD.md` section 8 phase 6 (recognition half), modules M6 and M7.
+**Files:** `src/commands.ts` (+test), `src/useVoiceCommand.ts`, `src/supabase.ts`,
+`src/places.ts`, `src/placeMatch.ts` (+test), `src/narrator.ts` (`setNarrationPaused`),
+`App.tsx` (`saveNow`, `whereNow`, `runCommand`, the hold gesture), `app.json`.
+
+### How to use it
+
+Hold anywhere until the buzz, speak, let go:
+- "save this as the kitchen" (also "remember this as …", "call this …") saves this view.
+  Saving the same name again adds another view, which helps recall.
+- "where am I" names the closest saved place over the threshold, or says it does not
+  recognise the place.
+- "what's around me" describes the scene, and "read this" reads text.
+
+### How it works
+
+Hold starts `expo-speech-recognition`, and letting go stops it. `parseCommand` turns the
+transcript into an action and never guesses (unknown → it says what it heard). Save and
+where-am-I take the same HD still as OCR, run the int8 CLIP image model (96 MB,
+`useImageEmbeddings`), and write to or query Supabase. A per-user "My places" route holds
+the anchors (PRD section 7 schema, unchanged). `match_anchors` returns the top 5, and
+`bestMatch` applies `MATCH_THRESHOLD`.
+
+### Setup for a new machine
+
+Root `.env` (gitignored):
+`EXPO_PUBLIC_SUPABASE_URL=…` and `EXPO_PUBLIC_SUPABASE_ANON_KEY=…` (the publishable key).
+The project needs the migration applied and **Anonymous sign-ins enabled and saved**.
+
+### Shortcuts, on purpose
+
+- **No guidance between places**, recognition only. See `docs/decisions.md`.
+- **Place memory needs the internet** (Supabase). An offline copy would need a local store.
+- **Threshold 0.85 is a guess**, tuned on one pair of rooms so far.
+- **Voice needs Google's speech service.** On Android 11, offline recognition depends on
+  the English offline pack. Untested.
+
 ## 2026-09-27 — Phase 7: describe with no network (on-phone VLM)
 
 **Status:** the model works on device. It described a bedroom and a known test JPEG

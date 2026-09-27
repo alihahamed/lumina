@@ -2,6 +2,37 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
+## 2026-09-27 — Speech recognition's manifest entry silently erased by the Viro plugin
+
+**Status:** fixed  
+**Files:** `app.json` (plugin order)
+
+### Symptom
+
+After adding `expo-speech-recognition` and running prebuild, the generated
+`AndroidManifest.xml` had no `<queries>` entry for `com.google.android.googlequicksearchbox`.
+On Android 11+ (begoniain is Android 11) the app cannot see Google's speech service
+without that entry, so recognition would fail at runtime. Typecheck and the build would
+still pass.
+
+### Root cause
+
+`@reactvision/react-viro`'s config plugin **assigns** the manifest's queries
+(`contents.manifest.queries = [...]`, `dist/plugins/withViroAndroid.js:250`) instead of
+appending to it. Expo runs manifest mods from the last-listed plugin first, so Viro, listed
+after the speech plugin, ran second and erased the speech entry.
+
+### Fix
+
+List `expo-speech-recognition` **before** `@reactvision/react-viro` in `app.json`, so its
+mod runs after Viro's overwrite. No library patch needed.
+
+### How we know
+
+After prebuild, the manifest has both `<queries>` blocks (ARCore and the speech service),
+and voice commands work on begoniain. **Watch for this again:** any future plugin that adds
+`<queries>` must also be listed before Viro.
+
 ## 2026-09-27 — Native SIGSEGV in ExecuTorch during depth inference
 
 **Status:** fixed for reloads. **10 reloads by hand, no crash** (2026-09-27), after two
