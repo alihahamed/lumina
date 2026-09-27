@@ -164,7 +164,7 @@ policy.
 | 4 | Read signs and room numbers on demand (ML Kit, offline, free) | **working on device** (read a book, 2026-09-27); tap-anywhere trigger, checklist open |
 | 5 | "What's around me?" via cloud VLM (Gemini free tier) | built; backend answers in 2–4 s via Gemini 3.1 Flash-Lite (3.5 fallback). **works on the phone** (2026-09-27) |
 | 6 | Save and recall routes | schema written, not deployed (`supabase/migrations/`) |
-| 7 | Offline VLM fallback when there is no network | not started |
+| 7 | Offline VLM fallback when there is no network | **model works on the phone** (LFM2.5-VL-450M, ~14 s); fallback path works by hand (16.6 s) |
 
 **Phases 1–4 are a complete, useful, fully offline app.** If the semester runs out there,
 we still submit something that works. Phases 5–7 are the research contribution.

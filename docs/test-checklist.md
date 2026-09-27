@@ -152,6 +152,23 @@ Backend running (`cd backend && npm run dev`) and `adb reverse tcp:8787 tcp:8787
 - [ ] Does the description name hazards that YOLO cannot (stairs, glass, open door)?
       This is the report's argument for the tier
 
+## Phase 7 — describe with no network
+
+Make the cloud unreachable: stop the backend on the laptop (Ctrl+C in `backend/`).
+Airplane mode alone does **not** do it in dev, because the phone reaches the laptop
+backend over USB.
+
+- [x] Model loads and describes a known JPEG and a live capture accurately
+      (2026-09-27, benchmark run, begoniain)
+- [x] Hold with the backend stopped goes to the phone model: it answered in 16.6 s
+      (49 tokens), no crash (2026-09-27, by hand, from the log)
+- [ ] …and the description matches the room. Not reported, so re-check
+- [ ] Time from letting go to the first described word. The model alone measured ~14 s
+- [ ] Nothing in view that is not there (no invented stairs or doors). The failure the
+      first prompt had
+- [ ] Hold again straight after: no crash, no overlap
+- [ ] Hold right after launch: is the photo black? (open question, `decisions.md`)
+
 ## Phase 6+ — add sections as phases land
 
 Spatial memory. Each gets its own section here before it is called

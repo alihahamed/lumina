@@ -7,6 +7,46 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-09-27 — Phase 7: LFM2.5-VL-450M on the phone, only when the cloud fails
+
+**Chose:** `models.llm.lfm2_5_vl_450m()` from react-native-executorch, the PRD's model
+family, pre-converted, with no export work. It is a fallback inside `describeNow`: the
+cloud goes first, and **any** cloud failure (no network, timeout, server error) falls
+through to the phone. `src/useOfflineDescriber.ts`.
+
+**Rejected:**
+- **LFM2.5-VL-1.6B**, the PRD's exact pick. It is a 2.4 GB download, and the phone had
+  ~2.2 GB free RAM with YOLO and depth loaded.
+- **Gemma 4 E2B multimodal**, which the library also ships. It is not the PRD's model,
+  and nothing measured says it is better. Try it only if the 450M's quality is not enough.
+- **Offline first.** At ~14 s against 2–4 s it is strictly worse whenever there is signal.
+
+**Measured on begoniain (2026-09-27, YOLO and depth running alongside):**
+
+| | |
+|---|---|
+| Download | 649 MB, once, automatic on first launch (`ponytail:` make opt-in / Wi-Fi only) |
+| Load from storage | 4.3–4.5 s |
+| Describe, two sentences (28–37 tokens) | **14.4–14.5 s** |
+| Describe, one short sentence (6–12 tokens) | 4.1–5.3 s |
+| Prompt size | ~297 tokens, most of it the image |
+| App memory, all three models loaded | 1.58 GB PSS. 1.69 GB left free on this 6 GB phone |
+
+Time scales with the words written (~0.4 s per token), not with reading the image. If
+14 s is too long in testing, ask for one sentence first (it roughly halves the time).
+Pausing YOLO and depth during generation is the other lever, but it pauses the safety
+layer, so it is not done.
+
+**The prompt matters more than usual at 450M.** The first prompt listed example hazards,
+and the model repeated them for a photo of a keyboard ("…facing stairs, a door, or an
+obstacle"). A system prompt with no examples ("Only mention things that are clearly
+visible. Never guess") described a bedroom and a test JPEG accurately.
+
+**Open:** one run described a bright room as "completely black". That photo was taken
+~10 s after launch and not kept, so the cause is unconfirmed. Suspects are an unsettled
+exposure at camera start, or the phone facing something dark. If it recurs, suspect
+camera warm-up, which would also affect OCR and cloud describe right after launch.
+
 ## 2026-09-27 — Phase 5: Gemini 3.1 Flash-Lite with a 3.5 fallback, not the PRD's 2.5; hold to describe
 
 **Model changed from the PRD (section 5, Gemini 2.5 Flash-Lite).** Google's deprecations

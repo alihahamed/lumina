@@ -5,6 +5,37 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-09-27 — Phase 7: describe with no network (on-phone VLM)
+
+**Status:** the model works on device. It described a bedroom and a known test JPEG
+accurately (benchmark run, 2026-09-27). The fallback path was then run by hand with the
+backend stopped: 16.6 s, no crash. **Whether that description matched the room was not
+reported.** See `test-checklist.md` Phase 7.
+**Covers:** `PRD.md` section 8 phase 7, module M5 (offline half).
+**Files:** `src/useOfflineDescriber.ts`, `src/text.ts` (+ `text.test.ts`), `App.tsx`
+(`describeNow`'s catch, the "offline vlm" overlay line).
+
+### What it does
+
+Hold anywhere. The cloud describe runs as before. If it fails for any reason, the app says
+"No connection. Describing on the phone, this takes a moment", runs LFM2.5-VL-450M on the
+same photo, and speaks the first two complete sentences (`firstSentences`). A 30 s timer
+calls `interrupt()`, because the library has no max-tokens setting.
+
+### How to pick this up
+
+- **First launch downloads 649 MB** on the phone's network. The overlay shows the
+  progress. It is cached after that, and later launches load in ~4.5 s.
+- Numbers, rejected options and the prompt lesson are in `docs/decisions.md`.
+- **Do not add example words to the prompt.** At 450M the model repeats them.
+
+### Shortcuts, on purpose
+
+- Automatic 649 MB download on first launch. Must become opt-in and Wi-Fi-only before
+  real users. `ponytail:` in `App.tsx`.
+- The model stays loaded all session (~1.6 GB total app RAM). Loading on demand would add
+  ~4.5 s to an already ~14 s wait.
+
 ## 2026-09-27 — Phase 5: "What's around me?" (cloud scene description)
 
 **Status:** the backend works against real Gemini. 8/8 calls answered in 2.1–3.7 s on

@@ -14,6 +14,7 @@ import { scheduleOnRN } from 'react-native-worklets'
 import DepthSpike from './src/DepthSpike'
 import { zoneDepths } from './src/depthZones'
 import { useDepth } from './src/useDepth'
+import { useOfflineDescriber } from './src/useOfflineDescriber'
 import { pulseFor, resetHaptics } from './src/haptics'
 import {
   nearestInPath,
@@ -69,6 +70,9 @@ export default function App() {
   // Phase 4: on-demand OCR (PRD section 4, "READING" tier). HD_4_3, not the 4K
   // default — legible enough for a sign, far less to capture and hand to ML Kit.
   const photoOutput = usePhotoOutput({ targetResolution: CommonResolutions.HD_4_3 })
+  // Phase 7: on-phone fallback when the cloud describe fails. 649 MB download on
+  // first launch — ponytail: make that opt-in and Wi-Fi-only before real users.
+  const offline = useOfflineDescriber()
   // One on-demand request at a time: OCR and describe share the one photo output.
   const [busy, setBusy] = useState<'reading' | 'describing' | null>(null)
   // Debug only, like depthStats — lets us confirm a result without needing to hear
@@ -132,10 +136,29 @@ export default function App() {
   )
 
   // Phase 5: cloud scene description, only ever because the user asked (PRD section 4).
+  // Cloud first (better, 2-4 s); on any failure, the on-phone model (Phase 7).
   const describeNow = useCallback(
-    () => withStill('describing', 'Looking', describeScene, 'Could not describe that'),
-    [withStill],
+    () =>
+      withStill(
+        'describing',
+        'Looking',
+        async (uri) => {
+          try {
+            return await describeScene(uri)
+          } catch (cloudError) {
+            if (!offline.isReady) throw cloudError
+            // Minutes of silence would read as a hang; say what is happening.
+            alert('No connection. Describing on the phone, this takes a moment.')
+            const r = await offline.describeOffline(uri)
+            console.log('offline describe', r.ms, 'ms', r.tokens, 'tokens')
+            return r.text.length > 0 ? r.text : 'Could not describe that.'
+          }
+        },
+        'Could not describe that',
+      ),
+    [withStill, offline],
   )
+
 
   useEffect(() => {
     if (!hasPermission) void requestPermission()
@@ -365,6 +388,13 @@ export default function App() {
             {depthStats.zones.right.toFixed(1)} m
           </Text>
         )}
+        <Text style={styles.detail}>
+          {offline.error != null
+            ? `offline vlm failed: ${String(offline.error).slice(0, 100)}`
+            : offline.isReady
+              ? `offline vlm ready · loaded in ${((offline.loadMs ?? 0) / 1000).toFixed(1)} s`
+              : `offline vlm downloading · ${Math.round(offline.downloadProgress * 100)}%`}
+        </Text>
         {lastResult != null && (
           <Text style={styles.detail} numberOfLines={4}>
             last {lastResult}
