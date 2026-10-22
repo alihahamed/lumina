@@ -341,13 +341,97 @@ camera **1145 ms** on this session (consistent with ~1.2 s measured earlier on A
 **Rejected for now:** Assuming the August note “ARCore works in software” means **this**
 Viro spike path is production-ready without a per-device spike pass.
 
-**Still open:** Run the same spike on **A001** (Android 16). If rays work there, ARCore-first
+**Still open:** Run the same spike on **A001** (Android 16). *(Answered: it fails there too — see 2026-09-01 below.)* If rays work there, ARCore-first
 architecture may remain valid for that hardware while begoniain uses ExecuTorch depth on
 VisionCamera. M6 (Cloud Anchors) may still force ARCore on some devices regardless.
 
 **Would change our mind:** Non-null depths with `source: arcore` on begoniain after a
 documented retry (tracking init, lighting, permissions); or Depth Anything on CPU proves
 too slow on device.
+
+---
+
+## 2026-09-01 — ARCore depth is dead on our test device. Spike closed.
+
+> **Merged late (2026-10-22).** Written on a local branch and never pushed, so the
+> 2026-09-23 entry above did not see it. It answers that entry's "run the same spike on
+> A001" question: no, rays fail there too. Its "Still open" section has since been
+> settled by the 2026-09-26 custom depth model and the 2026-09-27 removal of Viro.
+
+**Decided:** the "ARCore holds the camera permanently, three depth rays drive haptics"
+architecture (`STATUS.md` §5) is **rejected on this hardware**. Not on design grounds —
+it is sound — but because ARCore's depth pipeline does not function on the test phone.
+
+**This corrects the 2026-08-23 entry below**, which said "ARCore Depth would work, but
+fights us for the camera." The first half is false here. It does not work at all.
+
+### What actually happens
+
+`src/DepthSpike.tsx` reported `source: none` and no distances. That readout was
+ambiguous — it collapsed four distinct failures into one string. After instrumenting it
+(hit type, raw result count, tracking state, `_isDepthOcclusionSupported`) and reading
+`adb logcat`, the cause is **inside ARCore's own native library**:
+
+```
+E native: spherical_rectifier.cc:161 INTERNAL: RET_CHECK failure
+(vr/perception/depth/projects/motion_stereo/spherical_rectifier.cc:161)
+options_.unrectified_camera_model_type == kUnrectifiedOriginal
+(kUnrectifiedPinhole vs. kUnrectifiedOriginal)
+Only kUnrectifiedOriginal is supported for ComputeDisparity.
+```
+
+Every depth hit test then returns:
+
+```
+W native: No depth data found for the requested timestamp.
+          Error calculating the depth hit tests.
+          [ArStatusErrorSpace::AR_ERROR_NOT_YET_AVAILABLE]
+```
+
+It repeated for the whole capture and never once succeeded. Depth-from-motion cannot
+compute disparity because ARCore loaded a **generic** `kUnrectifiedPinhole` camera model
+for this device instead of a calibrated profile.
+
+**Device:** CMF Phone 2 Pro (`Nothing` / model `A001` / device `Galaga`), Android 16,
+ARCore **1.55.261550593**. Google's ARCore device list
+(https://developers.google.com/ar/devices) lists "CMF by Nothing Phone 1 — Supports
+Depth API" but **does not list the CMF Phone 2 Pro at all**. Depth API support is a
+subset of ARCore-certified devices; this phone is in neither set.
+
+### What this rules in, so nobody re-tests it
+
+| Thing | Verdict |
+|---|---|
+| Our Viro wiring | **Correct.** `depth_hit_test.cc` fired 24×; `depthEnabled` reached ARCore |
+| ARCore tracking | **Healthy.** `TRACKING_NORMAL`, reason `NONE` |
+| Planes / feature points | **Work.** These are the `no-depth` readings — real hits, no depth attached |
+| ARCore depth | **Never works.** Fails below Viro, below the Depth API surface |
+| Camera swap timing (~1.2 s) | **Moot.** Nothing worth swapping to |
+
+There is no configuration fix. Do not spend another cycle on Viro props, `occlusionMode`,
+ARCore updates, or hit-test coordinates.
+
+### Two traps worth remembering
+
+**`_isDepthOcclusionSupported()` returns `true` on a device where depth never works.**
+It checks the ARCore version, not whether the pipeline functions. Never trust it as a
+capability gate — probe for an actual depth value instead.
+
+**`depthDebugEnabled` is in Viro's `.d.ts` but exists nowhere in the Android AAR.** It is
+iOS-only despite an unconditional type. Typechecking a Viro prop does not mean Android
+implements it — grep the AAR:
+
+```bash
+unzip -p node_modules/@reactvision/react-viro/android/react_viro/react_viro-release.aar \
+  classes.jar > /tmp/c.jar && unzip -o -q /tmp/c.jar -d /tmp/c && grep -rc --binary-files=text "<propName>" /tmp/c
+```
+
+### Still open
+
+What replaces it. `react-native-executorch` has **no depth category** in its registry
+(see the entry below), so a monocular model means exporting Depth Anything V2-small to
+ExecuTorch ourselves — unproven work, and two models on one CPU may be too slow.
+Until that is decided, haptics stay on the bounding-box proximity heuristic.
 
 ---
 

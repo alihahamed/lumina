@@ -88,6 +88,13 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
 
 ## Current session — 2026-09-27
 
+> **2026-10-22 (Ali):** pulled `origin/main` (be3927f → e2c229e) into a local tree that
+> had unpushed spike work. Only code-free change kept: the 2026-09-01 A001 ARCore finding
+> in `docs/decisions.md`, which answers the 09-23 entry's open question. Local
+> `DepthSpike.tsx` edits dropped (file was deleted upstream with Viro). The notes below
+> are still the current state of the code. `backend/` needs its own `npm install` or
+> root `npm run typecheck` fails on missing `hono`/`jose`.
+
 **Overwrite this section next session.**
 
 ### Done
