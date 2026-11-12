@@ -2,6 +2,47 @@
 
 A start-to-finish trail per bug, so anyone can pick it up cold. Newest first.
 
+## 2026-10-22 — Depth haptics waited on YOLO; three smaller holes from an audit
+
+**Status:** fixed in code, typecheck and `npm test` clean. **Not yet run on a phone**;
+the device checks are in `test-checklist.md` (Phase 3 and Phase 6).
+**Files:** `App.tsx` (`onFrame`, `withStill`, the YOLO error path), `src/useVoiceCommand.ts`
+
+### 1. No obstacle buzz until YOLO had downloaded (safety)
+
+**Symptom (from reading the code, not observed):** on first launch, or after a failed
+download, the phone does not vibrate for anything, even though the depth model is bundled.
+**Root cause:** `onFrame` returned early when YOLO's `runOnFrame` was null, before the depth
+call. On top of that, a YOLO load error replaced the whole screen, Camera included, with
+an error message that nobody spoke aloud. So bundling depth "because it is the safety layer"
+(`useDepth.ts`) bought nothing until YOLO arrived from the network.
+**Fix:** `onFrame` skips only when *both* models are null and passes `[]` detections while
+YOLO is missing. The error screen is gone: the camera keeps running, the overlay
+shows the error, and the error is spoken once.
+
+### 2. Two captures on one photo output
+
+**Root cause:** `withStill` guarded on `busy` *state* and background scene naming on
+`busyRef`, which was only written during render. Between `setBusy` and the next render
+both guards read null, so a second command or a scene-naming still could start a capture
+alongside the first.
+**Fix:** `withStill` sets and clears `busyRef` synchronously and checks the ref.
+
+### 3. Narration silenced for good if listening failed to start
+
+**Root cause:** hold pauses narration and relies on the recogniser's `end` event to
+unpause it. If `requestPermissionsAsync` or `start` throws, no `end` ever comes.
+**Fix:** `start` catches and reports through `onFailed`, which unpauses.
+
+### 4. Offline description was unreachable offline
+
+**Root cause:** the only trigger for "what's around me" is a voice command, and voice used
+Google's network recogniser, which fails with no connection. That is exactly when the
+Phase 7 offline describer is needed.
+**Fix:** with no internet, and if the phone supports it, `requiresOnDeviceRecognition`.
+Needs Android 13+ and the English offline pack. **Unverified on device**; on older phones
+it still fails, with the spoken "Voice commands need the internet" message.
+
 ## 2026-09-27 — Speech recognition's manifest entry silently erased by the Viro plugin
 
 **Status:** fixed  

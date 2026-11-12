@@ -94,6 +94,20 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
 > `DepthSpike.tsx` edits dropped (file was deleted upstream with Viro). The notes below
 > are still the current state of the code. `backend/` needs its own `npm install` or
 > root `npm run typecheck` fails on missing `hono`/`jose`.
+> Then an audit: depth haptics no longer wait on YOLO's download, plus three smaller
+> fixes and a "stop" voice command (`docs/bug.md` 2026-10-22). **Not run on a phone yet**;
+> checks are in `docs/test-checklist.md` Phase 3 and 6.
+>
+> **2026-11-12 (Ali): route memory built, NOT validated.** "start route to …" / "end
+> route" / "take me to …" from steps, turns and CLIP views, no ARCore
+> (`docs/decisions.md`, `docs/feature.md` 2026-11-12). `npm test` covers the logic, and on
+> begoniain a command started a recording and step events arrived. **Nobody has walked a
+> route**: step accuracy, left/right sign and every threshold are unverified. Do not demo
+> it as working. Next: the walk checks in `docs/test-checklist.md` "Phase 6+".
+> New native dependency `expo-sensors`: rebuild with `npx expo run:android` after pulling.
+> Dev builds accept a command as text, for phones adb cannot tap:
+> `adb shell am start -a android.intent.action.VIEW -d "exp+lumina://cmd?say=end%20route" com.lumina.app`.
+> Ali's own Supabase project (not the team's) is paused; routes do not need it.
 
 **Overwrite this section next session.**
 

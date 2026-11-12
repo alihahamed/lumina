@@ -1,6 +1,6 @@
 import { File } from 'expo-file-system'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
+import { Linking, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { models, useImageEmbeddings, useObjectDetection } from 'react-native-executorch'
 import type { Frame } from 'react-native-vision-camera'
 import {
@@ -35,6 +35,7 @@ import { DescribeError, describeScene } from './src/describe'
 import * as Haptics from 'expo-haptics'
 import { parseCommand } from './src/commands'
 import { matchPlace, savePlace } from './src/places'
+import { useRouteMemory } from './src/useRouteMemory'
 import { useVoiceCommand } from './src/useVoiceCommand'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
@@ -148,7 +149,10 @@ export default function App() {
       work: (uri: string) => Promise<string>,
       fallback: string,
     ) => {
-      if (busy != null) return
+      // The ref, not the state: state lags a render, and in that gap a second command or
+      // a background scene-naming capture would get the camera too.
+      if (busyRef.current != null) return
+      busyRef.current = kind
       setBusy(kind)
       alert(start)
       let uri: string | null = null
@@ -175,10 +179,11 @@ export default function App() {
             // best-effort cleanup; a leftover temp file is not worth surfacing
           }
         }
+        busyRef.current = null
         setBusy(null)
       }
     },
-    [photoOutput, busy],
+    [photoOutput],
   )
 
   const readNow = useCallback(
@@ -262,6 +267,36 @@ export default function App() {
     [withStill, clip],
   )
 
+  // Route memory: a silent still every few steps, turned into a CLIP descriptor. Shares
+  // the one-capture-at-a-time slot with scene naming, and never competes with an
+  // on-demand request: a skipped view costs nothing, a blocked "read this" does.
+  const viewNow = async (): Promise<number[] | null> => {
+    if (!clip.isReady || busyRef.current != null || naming.current != null) return null
+    let out: number[] | null = null
+    naming.current = (async () => {
+      let uri: string | null = null
+      try {
+        const file = await photoOutput.capturePhotoToFile({ enableShutterSound: false }, {})
+        uri = file.filePath.startsWith('file://') ? file.filePath : `file://${file.filePath}`
+        out = Array.from(await clip.forward(uri))
+      } catch (e) {
+        console.warn('route view failed', e)
+      } finally {
+        if (uri != null) {
+          try {
+            new File(uri).delete()
+          } catch {
+            // best-effort cleanup
+          }
+        }
+        naming.current = null
+      }
+    })()
+    await naming.current
+    return out
+  }
+  const route = useRouteMemory(viewNow, alert)
+
   // Hold-and-speak: what was heard becomes one of the actions above.
   const runCommand = useCallback(
     (heard: string) => {
@@ -283,6 +318,14 @@ export default function App() {
         case 'hideLogs':
           setShowDebug(false)
           return alert('Logs hidden.')
+        case 'quiet':
+          return // startListening already stopped the speech
+        case 'routeStart':
+          return route.startRecording(cmd.label)
+        case 'routeEnd':
+          return void route.end()
+        case 'routeGo':
+          return void route.follow(cmd.label)
         case 'unknown':
           return alert(
             heard.trim() === ''
@@ -291,8 +334,19 @@ export default function App() {
           )
       }
     },
-    [describeNow, readNow, saveNow, whereNow],
+    [describeNow, readNow, saveNow, whereNow, route.startRecording, route.end, route.follow],
   )
+  // Dev builds only: a command as text, for testing without touch or a microphone
+  // (adb cannot tap on MIUI). `adb shell am start -a android.intent.action.VIEW
+  // -d "exp+lumina://cmd?say=take%20me%20to%20the%20desk" com.lumina.app`
+  useEffect(() => {
+    if (!__DEV__) return
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      const say = /[?&]say=([^&]+)/.exec(url)?.[1]
+      if (say != null) runCommand(decodeURIComponent(say))
+    })
+    return () => sub.remove()
+  }, [runCommand])
   const voiceFailed = useCallback((why: string) => {
     setNarrationPaused(false)
     alert(why)
@@ -324,6 +378,11 @@ export default function App() {
       lastDepthPattern.current = 'none'
     }
   }, [isReady])
+
+  // Without this a failed download is silence: "ready" never comes and nothing says why.
+  useEffect(() => {
+    if (error != null) alert('Object names did not load. Obstacle vibration still works. Restart Lumina on Wi-Fi to retry.')
+  }, [error])
 
   const publish = useCallback(
     (
@@ -404,18 +463,22 @@ export default function App() {
   const onFrame = useCallback(
     (frame: Frame) => {
       'worklet'
-      // Rebound by useFrameOutput whenever runOnFrame changes, so this is null
-      // only until the model finishes downloading.
-      if (runOnFrame == null) {
+      // Rebound by useFrameOutput whenever runOnFrame changes. YOLO is null until its
+      // first-launch download finishes (or for good if it failed); depth is bundled, so
+      // the safety layer must not wait on it.
+      if (runOnFrame == null && depthRun == null) {
         frame.dispose()
         return
       }
       try {
         const t0 = Date.now()
-        const found = runOnFrame(frame, false, {
-          detectionThreshold: MIN_SCORE,
-          inputSize: INPUT_SIZE,
-        })
+        const found =
+          runOnFrame == null
+            ? []
+            : runOnFrame(frame, false, {
+                detectionThreshold: MIN_SCORE,
+                inputSize: INPUT_SIZE,
+              })
         const yoloMs = Date.now() - t0
 
         // Depth failure must never take detection or haptics down with it — publish
@@ -483,15 +546,6 @@ export default function App() {
     )
   }
 
-  if (error != null) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.status}>Model failed to load</Text>
-        <Text style={styles.detail}>{String(error)}</Text>
-      </View>
-    )
-  }
-
   return (
     <View style={styles.root}>
       <StatusBar hidden />
@@ -551,7 +605,11 @@ export default function App() {
       {showDebug && (
       <View style={styles.overlay} pointerEvents="box-none">
         <Text style={styles.status}>
-          {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
+          {error != null
+            ? `detection failed: ${String(error).slice(0, 100)}`
+            : isReady
+              ? `detecting · ${TARGET_FPS} fps`
+              : `downloading model · ${Math.round(downloadProgress * 100)}%`}
         </Text>
         <Text style={styles.detail}>dropped frames: {dropped}</Text>
         <Text style={styles.detail}>
@@ -588,6 +646,7 @@ export default function App() {
             ? `scene: ${segmenter.isReady ? 'waits until something is within 1.6 m' : 'loading…'}`
             : `scene ahead: ${sceneStat.name ?? 'nothing clear'} · ${(sceneStat.ms / 1000).toFixed(1)} s`}
         </Text>
+        {route.status != null && <Text style={styles.label}>route: {route.status}</Text>}
         {lastWarning != null && (
           <Text style={styles.warning} numberOfLines={2}>
             last warning: {lastWarning}

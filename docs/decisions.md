@@ -7,6 +7,48 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-11-12 — Route memory from steps, turns and views, not ARCore
+
+**Chose:** a route is the straight stretches walked and the turns between them, counted
+from the phone's motion sensors, with a CLIP view saved every 8 steps and at each turn
+(`src/routeLogic.ts`, `src/useRouteMemory.ts`). Following speaks "walk about 20 steps,
+then turn left", counts down live, and uses the views to correct the step count and to say
+when the corridor does not look like the route. This is PRD phase 6's "take me to …".
+
+**Why:** it needs nothing we do not have. ARCore depth is dead on A001 (2026-09-01), ARCore
+would take the camera from detection, depth and OCR, and Viro is gone. Each half has a
+published precedent: steps and turns alone guided 7 blind participants back along indoor
+routes (UCSC, arXiv 2401.08021); saved views matched in sequence is visual teach-and-repeat
+(GuideNav, arXiv 2512.06147, CosPlace 512-dim plus a temporal filter). That paper's
+failures were magnetic matching and ignored wrong turns, which is why the correction here
+is visual and a wrong turn is spoken at once.
+
+**Rejected:**
+- **ARCore VIO + Cloud Anchors** (the PRD design; what Clew does on ARKit, under 1 m error
+  over 63 m). Best accuracy, but see above. Revisit only on a phone where ARCore can share
+  the camera.
+- **The compass** for heading. Steel and wiring bend it indoors. Turns come from the
+  gyroscope projected onto gravity, which also makes the phone's tilt irrelevant.
+- **Android's step counter** (`expo-sensors` `Pedometer`). It reports in batches, seconds
+  late, and wants a runtime permission. `makeStepDetector` is 15 lines on the accelerometer.
+- **MegaLoc / DINOv2-SALAD / BoQ** for the views: too heavy beside YOLO and depth on a CPU.
+- **Matching a view against the whole route.** Only the current leg's views are compared,
+  so the same door on another corridor cannot move the walker there.
+- **Supabase as the only store.** The free project paused itself after three idle weeks
+  (found today). The phone's file is what guidance reads; the cloud copy is best-effort.
+
+**Shortcuts, on purpose (`ponytail:` at each site):** turns are 90° only; one wrong turn
+at a time; every threshold (step bounce, 55° turn, 0.9 snap, 0.6 off-route, a view every
+6–8 steps) is a guess nobody has walked; CLIP is the descriptor because it is already
+loaded.
+
+**Would change our mind:** CLIP scoring different corridors above 0.9 (then export
+EigenPlaces or CosPlace ResNet-18, MIT, 512-dim, same column, the way depth was exported);
+steps miscounted by more than about 15% between two walks of one route; hand wobble read
+as turns.
+
+---
+
 ## 2026-09-27 — Spoken "stop", thresholds from latency, and naming walls/doors/stairs
 
 **The too-close warning is spoken now, not only felt** (`tooCloseWarning`,

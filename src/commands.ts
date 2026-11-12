@@ -9,6 +9,10 @@ export type Command =
   | { kind: 'whereami' }
   | { kind: 'showLogs' }
   | { kind: 'hideLogs' }
+  | { kind: 'quiet' }
+  | { kind: 'routeStart'; label: string }
+  | { kind: 'routeEnd' }
+  | { kind: 'routeGo'; label: string }
   | { kind: 'unknown'; heard: string }
 
 /** Lowercase, straight apostrophes, no punctuation, no wake word or politeness. */
@@ -32,6 +36,14 @@ const WHERE = /^(?:where am i|where is this|what place is this|which place is th
 const DESCRIBE =
   /^(?:what's|what is|whats) (?:around|in front of|near) (?:me|us)$|^(?:describe(?: this| the scene| it)?|what do you see|look(?: around)?|what's here|what is here)$/
 const READ = /^read(?: this| that| it| text| the text| the sign)?$/
+// Holding to speak already cut off whatever was being said; this just ends it there,
+// instead of replying "I didn't catch that". The way out of a long page read aloud.
+const QUIET = /^(?:stop|quiet|be quiet|stop talking|shut up|silence|enough|cancel)$/
+// Route memory (src/routeLogic.ts): "start route to the library" … "end route", then
+// "take me to the library". "stop route" also stops guidance.
+const ROUTE_START = /^(?:start|record|begin|save)(?: a| the)? (?:route|path|way) to (.+)$/
+const ROUTE_END = /^(?:end|finish|stop|cancel|save)(?: the| this)? (?:route|path|recording|guidance|navigation)$/
+const ROUTE_GO = /^(?:take me|guide me|lead me|navigate|go)(?: back)? to (.+)$/
 // The on-screen debug overlay, for demos to sighted people (the viva). Blind users never
 // need it, so it is off by default in release builds.
 const SHOW_LOGS = /^(?:show|turn on|open) (?:the )?(?:logs?|debug)(?: screen| overlay)?$/
@@ -44,8 +56,15 @@ export function parseCommand(heard: string): Command {
   if (WHERE.test(said)) return { kind: 'whereami' }
   if (DESCRIBE.test(said)) return { kind: 'describe' }
   if (READ.test(said)) return { kind: 'read' }
+  if (QUIET.test(said)) return { kind: 'quiet' }
   if (SHOW_LOGS.test(said)) return { kind: 'showLogs' }
   if (HIDE_LOGS.test(said)) return { kind: 'hideLogs' }
+  // Before SAVE: "save route to the lab" would otherwise be a place called "route to the lab".
+  if (ROUTE_END.test(said)) return { kind: 'routeEnd' }
+  const start = ROUTE_START.exec(said)
+  if (start != null) return { kind: 'routeStart', label: start[1].trim() }
+  const go = ROUTE_GO.exec(said)
+  if (go != null) return { kind: 'routeGo', label: go[1].trim() }
   const save = SAVE.exec(said)
   if (save != null) {
     const label = save[1].trim()

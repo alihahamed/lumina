@@ -5,6 +5,46 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-11-12 — Route memory: record a walk, be guided along it later
+
+**Status:** built; logic covered by `npm test` (`routeLogic.test.ts`). **Not yet walked on
+a phone.** Checks are in `test-checklist.md`, "Phase 6+".
+**Covers:** `PRD.md` section 3 item 5 and phase 6 ("take me to the library door"), without
+ARCore. Why: `docs/decisions.md` 2026-11-12.
+**Files:** `src/routeLogic.ts` (+test: step and turn detectors, recorder, follower),
+`src/useRouteMemory.ts` (sensors and wiring), `src/routes.ts` (file on the phone, copy to
+Supabase), `src/commands.ts` (three commands), `App.tsx` (`viewNow`, `runCommand`).
+New dependency: `expo-sensors` (native, needs a rebuild).
+
+### What the user does and hears
+
+- Hold, "start route to the library". "Recording the route to the library. Walk there,
+  then hold and say end route." Each turn is said back ("left turn.") so a missed one is
+  noticed.
+- Hold, "end route". "Saved the route to the library. 46 steps, 2 turns."
+- Later, at the same start, facing the same way: hold, "take me to the library". "Walk
+  about 12 steps, then turn left." … "Turn left in 5 steps." … "Turn left now." … "You
+  have arrived at the library."
+- Wrong turn: "That turn is not on the route. Turn right to get back." Walked past: "You
+  may have passed the turn." Wrong corridor (three views in a row unlike the route):
+  "This does not look like the route."
+- "end route" / "stop route" also stops guidance.
+
+### How it works
+
+`useRouteMemory` listens to `DeviceMotion` at 20 Hz only while recording or following.
+Acceleration magnitude goes to `makeStepDetector`; the gyroscope, projected onto gravity
+(`yawRate`), to `makeTurnDetector`, which reports a turn once the rotation has stopped.
+`App.tsx viewNow` takes a silent still and runs CLIP on it, sharing scene naming's
+one-capture-at-a-time slot and giving way to any on-demand request. A route is a list of
+checkpoints `{leg, step, turn?, descriptor}`; `legsOf` reads the instructions back out.
+
+### Shortcuts, on purpose
+
+See the decision entry. The ones a tester will meet first: 90° turns only, the start pose
+is the user's job, and the debug overlay's `route:` line and the `route …` log lines are
+the only way to see what it thinks.
+
 ## 2026-09-27 — "Stop" warning and naming walls, doors and stairs
 
 **Status:** **working on the phone** (2026-09-27). The walk test was reported okay, and the log

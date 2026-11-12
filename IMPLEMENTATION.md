@@ -30,6 +30,7 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | Backend auth | `jose` verifies Supabase ES256 JWTs (JWKS) | 6 |
 | Speech | `expo-speech` (system TTS) | SDK 57 |
 | Vibration | `expo-haptics` | SDK 57 |
+| Steps and turns | `expo-sensors` `DeviceMotion` (accelerometer + gyroscope, no compass) | 57.0.3 |
 | Worklets | `react-native-worklets` + `-vision-camera-worklets` | 5.2.3 |
 
 **Android** is the team’s primary target: `minSdkVersion` 26 — required, see `docs/bug.md`.
@@ -61,6 +62,9 @@ Why it is built this way: [`docs/decisions.md`](docs/decisions.md).
 | `src/supabase.ts` | Supabase client, anonymous sign-in, session persisted with `expo-file-system` |
 | `src/places.ts` | `savePlace` / `matchPlace` against `routes` + `anchors` + `match_anchors` |
 | `src/placeMatch.ts` | `MATCH_THRESHOLD`, `bestMatch`, `toPgVector`. Pure, tested |
+| `src/routeLogic.ts` | Route memory decisions: step and turn detectors, recorder, follower. Pure, tested by `routeLogic.test.ts`. `docs/decisions.md` 2026-11-12 |
+| `src/useRouteMemory.ts` | `expo-sensors` `DeviceMotion` → steps and turns; `startRecording` / `end` / `follow` |
+| `src/routes.ts` | A route as a file on the phone (what guidance reads), plus a best-effort copy to Supabase |
 | `src/useOfflineDescriber.ts` | Phase 7: LFM2.5-VL-450M via `useLLM`. `describeOffline(uri)` is the no-network fallback inside `describeNow` |
 | `src/text.ts` | `firstSentences()` for speech, pure, tested by `text.test.ts` |
 | `src/describe.ts` | Phase 5: base64 still → backend `/describe` → spoken text. Errors are phrased to be spoken |
@@ -175,7 +179,6 @@ Device checks, including known blind spots: [`docs/test-checklist.md`](docs/test
 
 Phases 5–7, and part of 4. Nothing below exists:
 
-- Guidance between saved places (needs ARCore VIO; recognition exists, see Phase 6)
 - Deployed backend. `backend/` (Hono `/describe`) and `supabase/migrations/0001_routes_anchors.sql`
   are written and locally checked but **not deployed and not called by the app**.
 
