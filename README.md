@@ -30,12 +30,41 @@ Three tiers, split by latency budget:
 | < 500 ms | OCR for signs and room numbers | On-device, offline |
 | 1–3 s | Vision-language scene description | Cloud, only when the user asks |
 
-Plus a spatial memory layer: ARCore VIO for precise pose, visual place descriptors
-for recognising a saved location after tracking is lost.
+Plus a spatial memory layer: CLIP place descriptors to recognise a saved location, and
+route memory built from steps and turns (phone motion sensors) with a view saved every
+few steps. ARCore was dropped because its depth is unavailable on our test phones. See
+[`docs/decisions.md`](docs/decisions.md) (2026-11-12).
 
 ## Status
 
-Early. Phase 2 of 7 — camera, YOLO26n detection, and rate-limited narration.
+All seven phases are built. What runs on a real phone, offline:
+
+- Depth-driven vibration for anything in your path, and a spoken "Stop" when it is close
+- Objects named with direction ("chair on your left"), plus walls, doors and stairs
+- Reading signs and room numbers (ML Kit OCR)
+- "What's around me": Gemini in the cloud, with an on-phone VLM fallback
+- Saving places and recognising them later
+
+Not yet validated on a phone: **route memory** ("take me to the library"), and depth
+readings checked against a tape measure. Measurement logging for the paper's evaluation
+was added on 2026-11-14. Details and open items: [`STATUS.md`](STATUS.md).
+
+## Using it
+
+Hold anywhere on the screen until it buzzes, speak, then let go.
+
+| Say | What happens |
+|---|---|
+| "what's around me" | Describes the scene |
+| "read this" | Reads text in front of the camera |
+| "save this as the kitchen" / "where am I" | Saves or recognises a place |
+| "start route to the library" … "end route" | Records a walk |
+| "take me to the library" | Guides you along a recorded route |
+| "stop" | Silences speech |
+| "show logs" / "hide logs" | Toggles the debug overlay |
+
+Testers only: "start measuring", "stop measuring", "log distance", "check place …".
+See [`docs/feature.md`](docs/feature.md).
 
 ## Docs
 
@@ -56,14 +85,63 @@ Early. Phase 2 of 7 — camera, YOLO26n detection, and rate-limited narration.
 
 ## Quick start
 
+Needs a physical Android phone over USB. Expo Go will not work. Full guide:
+[`SETUP.md`](SETUP.md).
+
 ```bash
 npm install
+npm run fetch-models                   # depth + SegFormer models into assets/models/ (gitignored)
+# create .env and backend/.env — see "Environment variables" below
 npx expo prebuild --platform android
-npx expo run:android
+npx expo run:android                   # first build ~10 min
 ```
 
-Requires a physical ARCore-certified Android device. See [`SETUP.md`](SETUP.md) —
-Expo Go will not work.
+Then, every session, in two terminals:
+
+```bash
+cd backend && npm install && npm run dev   # scene description backend on :8787
+npm run dev                                # adb reverse + Metro
+```
+
+Checks: `npm test` and `npm run typecheck`.
+
+## Environment variables
+
+Two files, both gitignored. Ask a teammate for the team's values, or create your own.
+
+**Root `.env` — the app.** Every `EXPO_PUBLIC_` value is built into the APK and anyone
+with the APK can read it, so **only public values go here**. Changing it needs a rebuild.
+
+| Variable | Required | Value |
+|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | Yes | `https://<project>.supabase.co` |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase publishable key (`sb_publishable_...`). Public by design; row-level security protects the data |
+| `EXPO_PUBLIC_DESCRIBE_URL` | Release APKs | Deployed backend, `https://...`. Unset = laptop backend over USB |
+| `EXPO_PUBLIC_SHOW_DEBUG` | No | `1` shows the debug overlay in release builds |
+| `EXPO_PUBLIC_MEASURE_SECONDS` | No | e.g. `360` for a hands-off measurement session |
+
+**`backend/.env` — the server.** Copy [`backend/.env.example`](backend/.env.example).
+
+| Variable | Required | Value |
+|---|---|---|
+| `GEMINI_API_KEY` | Yes | **Secret.** Get your own free key at https://aistudio.google.com/apikey |
+| `SUPABASE_URL` | When deployed | Same URL as above. Only signed-in Lumina users can then call `/describe`. Leave unset locally |
+| `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | No | Override the default models |
+| `PORT` | No | Local port, default `8787` |
+
+Keep it safe:
+
+- Never put the Gemini key in an `EXPO_PUBLIC_` variable. It would ship inside the APK.
+- No Supabase service-role or secret key is needed anywhere. Do not add one.
+- The deployed backend reads its secrets from Vercel's env settings
+  (`npx vercel env add GEMINI_API_KEY production`), not from a file.
+- `backend/.env.local` is created per machine by the Vercel CLI. Do not share it.
+- Share values through a password manager or a direct message, never the repo or a
+  group chat.
+
+**Supabase, once per project:** run `supabase/migrations/0001_routes_anchors.sql` in the
+SQL Editor, then Authentication → Sign In / Providers → **Allow anonymous sign-ins** →
+**Save changes**. Without it, saving a place fails with `anonymous_provider_disabled`.
 
 ## Licensing note
 
