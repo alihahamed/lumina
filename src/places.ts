@@ -39,14 +39,15 @@ export async function savePlace(label: string, descriptor: ArrayLike<number>): P
 
 /**
  * @returns the best match over the threshold (or null), plus the top similarity even
- * when it is under, for tuning the threshold on the debug overlay.
+ * when it is under, for tuning the threshold on the debug overlay, and every candidate
+ * returned, which the evaluation logs (src/measure.ts).
  */
 export async function matchPlace(
   descriptor: ArrayLike<number>,
-): Promise<{ match: { label: string; similarity: number } | null; top: Candidate | null }> {
+): Promise<{ match: { label: string; similarity: number } | null; top: Candidate | null; candidates: Candidate[] }> {
   const route = await myRouteId()
   const res = await db().rpc('match_anchors', { query: toPgVector(descriptor), route, k: 5 })
   if (res.error != null) throw res.error
   const candidates = (res.data ?? []) as Candidate[]
-  return { match: bestMatch(candidates), top: candidates[0] ?? null }
+  return { match: bestMatch(candidates), top: candidates[0] ?? null, candidates }
 }

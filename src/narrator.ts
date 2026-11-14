@@ -12,6 +12,27 @@ const finished = () => {
 }
 
 /**
+ * Called when the TTS engine actually starts an utterance, for measuring how long
+ * speech takes to start (src/measure.ts). Null outside a measurement session.
+ */
+export type SpeechObserver = (kind: 'alert' | 'narration', text: string, calledAt: number, startedAt: number) => void
+let observer: SpeechObserver | null = null
+
+export function observeSpeech(fn: SpeechObserver | null): void {
+  observer = fn
+}
+
+function speak(kind: 'alert' | 'narration', text: string): void {
+  const calledAt = Date.now()
+  Speech.speak(text, {
+    onStart: () => observer?.(kind, text, calledAt, Date.now()),
+    onDone: finished,
+    onStopped: finished,
+    onError: finished,
+  })
+}
+
+/**
  * Feeds this frame's candidates to the policy and speaks at most one of them.
  *
  * Deliberately passes no voice, rate or pitch: blind users run their system TTS at
@@ -26,7 +47,7 @@ export function narrate(candidates: Candidate[], now: number = Date.now()): stri
 
   lastSpokeAt = now
   speaking = true
-  Speech.speak(pick.text, { onDone: finished, onStopped: finished, onError: finished })
+  speak('narration', pick.text)
   return pick.text
 }
 
@@ -38,7 +59,7 @@ export function alert(text: string, now: number = Date.now()): void {
   Speech.stop()
   lastSpokeAt = now
   speaking = true
-  Speech.speak(text, { onDone: finished, onStopped: finished, onError: finished })
+  speak('alert', text)
 }
 
 /**

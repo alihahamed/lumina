@@ -86,9 +86,39 @@ Uninstalling `com.lumina.app` frees room; a rebuild needs ~250MB headroom.
 
 ---
 
-## Current session — 2026-09-27
+## Current session — 2026-11-14
 
 **Overwrite this section next session.**
+
+Context: the IEEE paper's second review (`~/Downloads/Lumina_Updated_Paper_Review.pdf`).
+The text revision is `~/Downloads/Lumina_Revision_2/main.tex`; every experiment in it is
+still "pending". This session worked on comments 2 and 3. All uncommitted on `main`.
+
+- **Measurement tooling** (`src/measure.ts`, `scripts/measure-report.ts`): see
+  `docs/feature.md` 2026-11-14. New: hands-off timed session via
+  `EXPO_PUBLIC_MEASURE_SECONDS` (unset it for normal builds), and
+  `scripts/device-monitor.sh` now logs CPU temperature, throttling and clocks.
+- **Pilot latency run on the phone (dev build, battery ~10%, charging):** median T 308 ms,
+  p95 1056 ms. The slow tail is **SegFormer competing for the CPU, not heat**: p95 347 ms
+  without it. Details and rejected options: `docs/decisions.md` 2026-11-14. Logs are in
+  `~/Downloads/Lumina_Revision_2/measurements-2026-11-14/`.
+- **Depth-first frame loop built (`App.tsx onFrame`, `shouldDetect`). Runs on the phone**
+  (YOLO loads; skipped as designed inside 2.5 m). **Not yet measured or walk-tested** —
+  next: `docs/test-checklist.md` "Depth-first frame loop", then the before/after latency
+  runs.
+- Release measurement APK (`EXPO_PUBLIC_MEASURE_SECONDS=360 ./gradlew :app:assembleRelease
+  -PreactNativeArchitectures=arm64-v8a`) failed on a Maven Central download error, not code.
+  Retry. It overwrites `app-release.apk`; the Sep 27 demo APK is kept as
+  `android/app/build/outputs/apk/release/app-release-2026-09-27-demo.apk`.
+- **Venue limit is 4-6 pages including references (ICAIACI-2027 brochure); the revised paper
+  is 8. Abstract due 20 Nov 2026, full paper 15 Dec.**
+- Phone notes: adb drops the Redmi now and then — `adb kill-server` brings it back. Run
+  `adb reverse` in the foreground, then Metro. Behind the lock screen the dev bundle does not
+  load. `adb logcat -G 16M` or logcat dies mid-session ("unable to read log messages").
+- Paper facts found wrong: package size is 203.9 MB, not 188.6 MB; protocol item (i)
+  said CPU temperature but the script logged battery (fixed). Reference [b9] still unverified.
+
+## Previous session — 2026-09-27
 
 ### Done
 

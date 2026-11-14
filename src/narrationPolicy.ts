@@ -161,6 +161,29 @@ export const DEPTH_IMMINENT_M = 1.0
 export const DEPTH_NEAR_M = 1.6
 export const DEPTH_FAR_M = 2.5
 
+/**
+ * Whether to run detection on a frame, given the distance depth just measured straight
+ * ahead (null when depth is not ready or failed).
+ *
+ * Depth runs first on every frame and its warning goes out before detection starts
+ * (App.tsx onFrame). Detection still holds up the NEXT frame, so while something is
+ * within the outermost warning band it is skipped entirely: the gap between distance
+ * updates is then depth alone, not detection + depth. It has to be the outer band, not
+ * the 1.0 m "Stop" one: at the slowest measured frame (~1 s) a walker covers ~1.2 m
+ * between two updates, so cadence must already be fast well before 1.0 m.
+ *
+ * Cost: no new object names (and no narration) while something is within 2.5 m ahead;
+ * "Stop" names the obstacle from the last detection or from segmentation instead.
+ * Without depth, detection always runs, because the box fallback needs it.
+ * docs/decisions.md 2026-11-14.
+ */
+export const DETECT_SKIP_WITHIN_M = DEPTH_FAR_M
+
+export function shouldDetect(centreM: number | null): boolean {
+  'worklet'
+  return centreM == null || centreM >= DETECT_SKIP_WITHIN_M
+}
+
 /** While still too close, repeat the spoken warning no more often than this. */
 export const TOO_CLOSE_REPEAT_MS = 4000
 

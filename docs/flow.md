@@ -41,39 +41,55 @@ App.tsx  App()
 
 ## Per-frame path (the hot loop)
 
-Runs on VisionCamera's frame thread, **not** the JS thread.
+Runs on VisionCamera's frame thread, **not** the JS thread. **Depth first** since
+2026-11-14 (`docs/decisions.md`): the warning for a frame is decided before detection
+starts on it, and detection is skipped while anything is within 2.5 m ahead.
 
 ```
 camera pipeline
   └─ App.tsx  onFrame(frame)              'worklet' — frame thread
        ├─ runOnFrame == null?  → frame.dispose(); return
-       │    (true only while the model is still downloading)
+       │    (true only while YOLO is still downloading)
        │
-       ├─ runOnFrame(frame, false, { detectionThreshold, inputSize })
-       │    ExecuTorch reads frame.getNativeBuffer() and runs YOLO26n
-       │    synchronously. Returns Detection[] — blocks this thread.
+       ├─ depthRun(frame, ...)  → zoneDepths(map)        src/useDepth.ts, src/depthZones.ts
+       │    Depth Anything V2 140 px, ~220-330 ms. Throws → depthZones null, not fatal.
        │
-       ├─ scheduleOnRN(publish, plainDetections, frame.width)
-       │    react-native-worklets — hops to the JS thread, fire-and-forget.
-       │    bbox is rebuilt as a plain object: native host objects do not
-       │    survive the hop. frame.width must be read before dispose().
+       ├─ scheduleOnRN(publishSafety, depthMs, depthZones, depthError, t0)
+       │    hops to the JS thread NOW, before detection runs
        │
+       ├─ shouldDetect(depthZones?.centre)               src/narrationPolicy.ts
+       │    false while centre < DETECT_SKIP_WITHIN_M (2.5 m): no YOLO this frame,
+       │    so the next frame (and the next distance) comes one depth-time later
+       │    └─ true → runOnFrame(frame, ...)  YOLO26n, ~80-270 ms; boxes rebuilt as
+       │             plain objects (host objects do not survive the hop)
+       │
+       ├─ scheduleOnRN(publishDetections, found | null, w, h, yoloMs, t0)
        └─ finally: frame.dispose()        MUST happen or the pipeline stalls
 
-App.tsx  publish(found, frameWidth)         JS thread
-  ├─ toCandidates(found, frameWidth)        → src/narrationPolicy.ts
-  │    per detection: label + zone → key, text, score
-  │    zoneOf() splits the frame in thirds by bbox centre-x
-  │    score = area × (2 − offCentre) — nearer and more central ranks higher
-  ├─ setLabels(...)                         → debug overlay re-renders
-  ├─ nearestInPath(candidates)              → closest candidate with zone 'ahead'
-  │    └─ pulseFor(proximity)               → src/haptics.ts
-  │         pulseIntervalFor(): null below PULSE_MIN_PROXIMITY (0.55),
-  │         else 1200ms → 250ms as it gets closer; strength rises too.
-  │         Runs BEFORE narrate() and independently of it — the safety layer
-  │         must not wait on speech, on a name, or on anything off-device.
-  └─ narrate(candidates)                    → src/narrator.ts
+App.tsx  publishSafety(...)                 JS thread, first for each frame
+  ├─ depthZones != null:
+  │    stablePatternForDepth(centre)        → 'none' | 'far' | 'near' | 'imminent'
+  │    └─ decide(pattern, t0)               (below)
+  ├─ pendingFrame.current = { t0, depth result, publishedAt, hapticAt }
+  └─ "log distance" sampling, if one is running
 
+App.tsx  publishDetections(...)             JS thread, after publishSafety (queued in order)
+  ├─ found != null: toCandidates → setLabels; lastDetections.current = { candidates, at }
+  ├─ depth had nothing for this frame: box fallback → decide(patternFor(proximity), t0)
+  ├─ recordFrame(...)                       src/measure.ts, no-op unless measuring
+  └─ narrate(candidates [+ "door/stairs ahead"])      skipped when detection was
+
+App.tsx  decide(pattern, t0)                once per frame, from exactly one of the above
+  ├─ pulseFor(pattern)                      src/haptics.ts — before anything else
+  ├─ naming: pattern near/imminent → nameAheadNow() (photo → SegFormer), once per
+  │    approach then every NAME_EVERY_MS (10 s); 'none'/'far' re-arms and forgets the name
+  └─ tooCloseWarning(pattern, name)         name = last detection (≤3 s old) ?? scene name
+       └─ alert("Stop. ...")                interrupts any speech
+```
+
+Narration below (`narrate` → `selectAnnouncement`) is unchanged:
+
+```
 src/narrator.ts  narrate(candidates)
   └─ selectAnnouncement(candidates, now, tracks, lastSpokeAt, !speaking)
        │                                    → src/narrationPolicy.ts

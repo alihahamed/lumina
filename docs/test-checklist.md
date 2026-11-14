@@ -208,3 +208,93 @@ Not built. Needs ARCore VIO on a phone where it works. Each gets its own section
 done, and every one of them needs the failure cases and the blindfold test.
 
 **Never test with a real blind user without a sighted spotter present.**
+
+---
+
+## Depth-first frame loop (2026-11-14) — not yet run
+
+Built and unit-tested; `docs/decisions.md` 2026-11-14. Dev build is enough.
+
+- [ ] **Starts at all:** "Lumina ready" is spoken and the overlay shows detections. (The
+      only launch after the change never got YOLO ready — find out whether that repeats.)
+- [ ] **Faster warning:** two hands-off 6-minute sessions, same scene with something within
+      2.5 m, one on the commit before this change and one after, each from a cool phone
+      (CPU < 50 °C). Pass: after has a lower p95 "Age of distance at decision" and p95
+      "Interval between frames", and "Detection ran on N of M frames" shows N well below M
+- [ ] **Walk to a wall from 4 m:** vibration escalates, "Stop" is spoken; overlay labels stop
+      updating inside 2.5 m and resume after backing off
+- [ ] **Walk to a chair from 4 m:** "Stop. Chair right in front of you." — the name comes from
+      the detection seen before 2.5 m. Pass: named, not "Something"
+- [ ] **Naming once per approach:** standing 1.2 m from a door for 30 s, `scene ahead` appears in
+      `adb logcat` about every 10 s, not every 2 s
+- [ ] **Depth off:** with the depth model failing (rename the .pte locally, never commit), boxes
+      still drive vibration and narration as before
+
+---
+
+## Evaluation for the IEEE paper (second review)
+
+Each item matches Section VI-F of the revised paper. Tools: `docs/feature.md` 2026-11-14.
+**Report only what was run.** If an item is cut short, the paper says so.
+
+Before every item, on the laptop:
+
+```bash
+adb logcat -c
+adb logcat -s ReactNativeJS:V > run-<item>-<date>.log   # leave running
+```
+
+At the end: `node scripts/measure-report.ts run-<item>-<date>.log`. Keep every log file.
+They are the evidence behind the numbers.
+
+### (i) Latency — median and 95th percentile
+
+- [ ] Release APK (`npx expo run:android --variant release`), airplane mode, no other apps
+      open, battery above 80% and not charging, phone at room temperature, aimed at a fixed scene
+- [ ] `bash scripts/device-monitor.sh dev-latency.csv 10` running alongside (USB is fine here)
+- [ ] Build with `EXPO_PUBLIC_MEASURE_SECONDS=360` (hands-off: the session starts itself
+      and stops after 6 minutes; the first minute is dropped as warm-up). Phone **unlocked**
+      and untouched. Or say "start measuring" / "stop measuring" if the camera can stay still
+- [ ] `node scripts/measure-report.ts run.log --device dev-latency.csv` also prints T against
+      CPU temperature, throttling and clock speed (review comment 3)
+- [ ] Three runs from a cold phone, then three straight after, with the phone warm
+- [ ] Pass: the report prints the p95 of T and the recomputed Eq. (1) margins. Copy them
+      into Table IV, Table VI and Fig. 2. If the cold runs are much faster than the warm
+      ones, the September–November difference is thermal; say so in Section VI-A.
+
+### (iii) Depth against a tape measure — do this first
+
+- [ ] Targets: a wall, a door, a chair, a person and a glass panel. Distances: 0.5, 1.0, 1.5,
+      2.0, 2.5 and 3.0 m, with the phone at chest height pointing straight at the target
+- [ ] At each position: "log distance", hold still until "Sample N …" is spoken, and write
+      `N,true_m,target,light` in `truth.csv` (header `sample,true_m,target,light`)
+- [ ] Repeat in dim light
+- [ ] `node scripts/measure-report.ts run.log --depth-truth truth.csv`
+- [ ] Pass: the signed and absolute errors go into Table IV. A **positive** signed error
+      (obstacles reported further away than they are) shrinks every margin in Table VI.
+      Say that explicitly.
+
+### (iv) Place recognition
+
+- [ ] Save at least 10 places in two buildings, with 3 views each ("save this as <name>"
+      three times, turning slightly). Include look-alikes: two corridors, two classrooms of
+      the same layout
+- [ ] On later visits and on different days: "check place <name>" facing the saved direction
+      and turned about 30° either way, in daylight and under artificial light
+- [ ] At places that were never saved: "check place unknown"
+- [ ] Pass: the report gives the score distributions and the threshold sweep. Pick τ on half
+      the visits, then report the recognition and false-recognition rates on the other half.
+
+### (v) Battery and heat
+
+- [ ] Connect over **wireless debugging**, not USB, so the phone is not charging
+- [ ] Full charge, fixed screen brightness, app running, `bash scripts/device-monitor.sh dev-battery.csv`
+      for 30 minutes. Do this twice
+- [ ] `node scripts/measure-report.ts run.log --device dev-battery.csv`
+- [ ] Pass: the report shows battery points per hour and the temperature range, with no
+      "on power" warning
+
+### (ii) Detection accuracy — not covered by the app logging
+
+Needs about 300 photos labelled for COCO classes, then an evaluation on the laptop
+(Ultralytics `val`). There is no tooling for this yet.

@@ -11,6 +11,8 @@ import {
   patternFor,
   patternForDepth,
   stablePatternForDepth,
+  shouldDetect,
+  DETECT_SKIP_WITHIN_M,
   tooCloseWarning,
   TOO_CLOSE_REPEAT_MS,
   DEPTH_IMMINENT_M,
@@ -262,5 +264,13 @@ assert.equal(stablePatternForDepth(0.1, 'none'), 'imminent')
   assert.equal(tooCloseWarning('imminent', null, st, 6100), 'Stop. Something right in front of you.',
     're-entering speaks at once, and without a name says "something"')
 }
+
+// --- depth-first scheduling: detection is skipped while anything is within the outer band
+assert.equal(DETECT_SKIP_WITHIN_M, DEPTH_FAR_M, 'skip band must start where the first warning does')
+assert.equal(shouldDetect(null), true, 'no depth: detection runs, the box fallback needs it')
+assert.equal(shouldDetect(DEPTH_FAR_M + 1), true)
+assert.equal(shouldDetect(DEPTH_FAR_M), true, 'boundary matches patternForDepth: 2.5 m is outside the band')
+assert.equal(shouldDetect(DEPTH_FAR_M - 0.01), false)
+assert.equal(shouldDetect(0.5), false)
 
 console.log('narrationPolicy: all checks passed')

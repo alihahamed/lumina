@@ -23,6 +23,16 @@ for (const s of ['read', 'Read this', 'read the sign']) assert.equal(kind(s), 'r
 for (const s of ['show logs', 'Show the debug screen', 'turn on debug']) assert.equal(kind(s), 'showLogs', s)
 for (const s of ['hide logs', 'turn off the debug overlay', 'close logs']) assert.equal(kind(s), 'hideLogs', s)
 
+// --- measurement commands (src/measure.ts), for the evaluation only
+for (const s of ['start measuring', 'Begin measurement', 'start benchmark']) assert.equal(kind(s), 'measureStart', s)
+for (const s of ['stop measuring', 'finish the measurement', 'end benchmark']) assert.equal(kind(s), 'measureStop', s)
+for (const s of ['log distance', 'record the distance', 'measure depth']) assert.equal(kind(s), 'logDistance', s)
+assert.deepEqual(parseCommand('Check place library door'), { kind: 'checkPlace', truth: 'library door' })
+assert.deepEqual(parseCommand('test location lab 2'), { kind: 'checkPlace', truth: 'lab 2' })
+for (const s of ['check place unknown', 'check place not saved', 'test place none'])
+  assert.deepEqual(parseCommand(s), { kind: 'checkPlace', truth: null }, s)
+assert.equal(kind('check place'), 'unknown', 'no truth given')
+
 // --- save, and what gets remembered
 assert.equal(label('Save this as the library door'), 'the library door')
 assert.equal(label('remember this place as my desk'), 'my desk')

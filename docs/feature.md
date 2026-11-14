@@ -5,6 +5,55 @@ can pick it up cold. Newest first.
 
 ---
 
+## 2026-11-14 — Measurement logging for the paper's evaluation
+
+**Status:** built, `npm test` and `npm run typecheck` pass. **Latency logging ran on the
+phone on 2026-11-14** (one 6-minute pilot session, dev build, low battery: see
+`docs/decisions.md` 2026-11-14). Depth, place and battery logging not yet run.
+**Why:** the reviewer of the IEEE paper asked for real numbers: latency median and 95th
+percentile, the processed frame rate, depth against a tape measure, place-recognition
+scores across many places, and battery drain. Until now the overlay only showed single
+readings that someone copied by hand.
+**Files:** `src/measure.ts` (+`measure.test.ts`), `src/commands.ts` (4 new commands),
+`src/narrator.ts` (`observeSpeech`), `src/places.ts` (`matchPlace` returns all candidates),
+`App.tsx` (`publish`, `whereNow`, `startMeasurement`/`stopMeasurement`),
+`scripts/measure-report.ts`, `scripts/device-monitor.sh`.
+
+### What the tester says (hold anywhere, then speak)
+
+- **"start measuring"** / **"stop measuring"**: logs every processed frame in between. On
+  stop, the phone speaks the median and 95th-percentile frame time and the frame rate.
+- **"log distance"**: the median centre-zone distance over the next 10 frames, spoken as
+  "Sample 3. 1.45 metres ahead." Write the sample number next to the tape measure reading.
+- **"check place kitchen"**: a normal "where am I", logged with the true place and with the
+  score spoken. Use **"check place unknown"** at a place that was never saved.
+
+**Hands-off session (no voice):** start Metro or build with
+`EXPO_PUBLIC_MEASURE_SECONDS=360`; a session starts by itself once both models load and
+stops after that many seconds. Use it for the latency item: holding the screen to say
+"start measuring" moves the camera, and adb cannot tap on this phone. The phone must be
+**unlocked** — behind the lock screen the bundle does not load and nothing is logged.
+
+### How it works
+
+Every record is one log line, `LUMINA_MEASURE <kind> <json>`, that `adb logcat` captures in
+debug and release builds. No new dependency and nothing is written to phone storage.
+`scripts/measure-report.ts` parses the log and prints the paper's numbers, including Eq. (1)
+recomputed from the measured 95th percentile. The worklet's existing `t0` is now passed to
+`publish`. Frame start to vibration is measured from `t0`, so the camera's own capture
+delay is still **not** included.
+
+Rejected: writing CSV files on the phone. Release builds are not debuggable, so `adb
+run-as` cannot fetch them, and sharing them would need a new dependency. Also rejected:
+reading CPU temperature in the app, which needs a native module. `scripts/device-monitor.sh`
+reads it over adb instead, from `dumpsys thermalservice` (`/sys/class/thermal` is
+permission-denied without root on this phone), with CPU clocks from `cpufreq`.
+
+ponytail: the speech start time comes from `expo-speech`'s `onStart`, which is when the TTS
+engine *reports* starting, not when sound leaves the speaker.
+
+---
+
 ## 2026-09-27 — "Stop" warning and naming walls, doors and stairs
 
 **Status:** **working on the phone** (2026-09-27). The walk test was reported okay, and the log

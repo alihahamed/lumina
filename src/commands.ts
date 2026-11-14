@@ -9,6 +9,12 @@ export type Command =
   | { kind: 'whereami' }
   | { kind: 'showLogs' }
   | { kind: 'hideLogs' }
+  // Measurement commands for the paper's evaluation (src/measure.ts). `truth: null`
+  // means the tester is at a place that was never saved.
+  | { kind: 'measureStart' }
+  | { kind: 'measureStop' }
+  | { kind: 'logDistance' }
+  | { kind: 'checkPlace'; truth: string | null }
   | { kind: 'unknown'; heard: string }
 
 /** Lowercase, straight apostrophes, no punctuation, no wake word or politeness. */
@@ -36,6 +42,13 @@ const READ = /^read(?: this| that| it| text| the text| the sign)?$/
 // need it, so it is off by default in release builds.
 const SHOW_LOGS = /^(?:show|turn on|open) (?:the )?(?:logs?|debug)(?: screen| overlay)?$/
 const HIDE_LOGS = /^(?:hide|turn off|close) (?:the )?(?:logs?|debug)(?: screen| overlay)?$/
+// Evaluation only, spoken by a sighted tester, never needed by a blind user.
+const MEASURE_START = /^(?:start|begin) (?:measuring|measurement|measurements|the measurement|benchmark|benchmarking)$/
+const MEASURE_STOP = /^(?:stop|end|finish) (?:measuring|measurement|measurements|the measurement|benchmark|benchmarking)$/
+const LOG_DISTANCE = /^(?:log|record|sample|measure) (?:the )?(?:distance|depth)$/
+// "check place kitchen", "test place library door"; "check place unknown" for an unsaved place
+const CHECK_PLACE = /^(?:check|test) (?:place|location) (.+)$/
+const NO_PLACE = /^(?:unknown|none|nowhere|unsaved|not saved|new|new place)$/
 
 export function parseCommand(heard: string): Command {
   const said = normalise(heard)
@@ -46,6 +59,14 @@ export function parseCommand(heard: string): Command {
   if (READ.test(said)) return { kind: 'read' }
   if (SHOW_LOGS.test(said)) return { kind: 'showLogs' }
   if (HIDE_LOGS.test(said)) return { kind: 'hideLogs' }
+  if (MEASURE_START.test(said)) return { kind: 'measureStart' }
+  if (MEASURE_STOP.test(said)) return { kind: 'measureStop' }
+  if (LOG_DISTANCE.test(said)) return { kind: 'logDistance' }
+  const check = CHECK_PLACE.exec(said)
+  if (check != null) {
+    const truth = check[1].trim()
+    return { kind: 'checkPlace', truth: NO_PLACE.test(truth) ? null : truth }
+  }
   const save = SAVE.exec(said)
   if (save != null) {
     const label = save[1].trim()

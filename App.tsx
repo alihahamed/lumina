@@ -20,8 +20,10 @@ import { pulseFor, resetHaptics } from './src/haptics'
 import {
   nearestInPath,
   patternFor,
+  shouldDetect,
   stablePatternForDepth,
   tooCloseWarning,
+  type Candidate,
   type CloseWarning,
   toCandidates,
   type Detected,
@@ -29,12 +31,25 @@ import {
   type ZoneMemory,
 } from './src/narrationPolicy'
 import type { ZoneDepths } from './src/depthZones'
-import { alert, narrate, resetNarrator, setNarrationPaused } from './src/narrator'
+import { alert, narrate, observeSpeech, resetNarrator, setNarrationPaused } from './src/narrator'
 import { readText } from './src/ocr'
 import { DescribeError, describeScene } from './src/describe'
 import * as Haptics from 'expo-haptics'
 import { parseCommand } from './src/commands'
 import { matchPlace, savePlace } from './src/places'
+import { MATCH_THRESHOLD } from './src/placeMatch'
+import {
+  depthSample,
+  isMeasuring,
+  nextSampleNumber,
+  recordDepthSample,
+  recordFrame,
+  recordPlaceQuery,
+  recordSpeech,
+  spokenSummary,
+  startMeasuring,
+  stopMeasuring,
+} from './src/measure'
 import { useVoiceCommand } from './src/useVoiceCommand'
 
 // YOLO26n ships as an XNNPACK build, so inference runs on the CPU at roughly
@@ -48,10 +63,26 @@ const INPUT_SIZE = 384
 // Starting state of the debug overlay; "show logs" / "hide logs" toggles it at runtime.
 const SHOW_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SHOW_DEBUG === '1'
 
-// Naming what is ahead (wall, door, stairs) runs only when depth says something is
-// within reach, at most this often, and a name is trusted for this long.
-const NAME_EVERY_MS = 2000
-const NAME_FRESH_MS = 3000
+// Naming what is ahead (wall, door, stairs) runs once when depth says something is
+// within reach, then at most this often while it stays there; the name is trusted for
+// as long, and forgotten when the user backs out of the near bands. Was 2 s, which kept
+// segmentation running about half the time near a wall and slowed depth (decisions.md
+// 2026-11-14).
+const NAME_EVERY_MS = 10000
+const NAME_FRESH_MS = 10000
+// How long the last detection may name a "Stop" while detection is skipped.
+const DETECTION_FRESH_MS = 3000
+
+// "log distance" (evaluation only): the median of this many consecutive centre-zone
+// readings, about 5 s at the measured 1-2 frames per second.
+const DEPTH_SAMPLE_FRAMES = 10
+
+// Evaluation only: a hands-off latency session of this many seconds starts by itself
+// once both models are loaded. The protocol wants the phone untouched on a fixed scene,
+// and "start measuring" needs a hold on the screen, which moves the camera. Unset (0) in
+// every normal build. Set it when starting Metro or building a measurement APK:
+//   EXPO_PUBLIC_MEASURE_SECONDS=360 npx expo start --dev-client --localhost --clear
+const MEASURE_SECONDS = Number(process.env.EXPO_PUBLIC_MEASURE_SECONDS ?? 0)
 
 type Busy = 'reading' | 'describing' | 'saving' | 'locating'
 
@@ -76,10 +107,27 @@ export default function App() {
   const lastDepthPattern = useRef<PulsePattern>('none')
   // Spoken "stop" state, so it speaks on arrival and repeats only every few seconds.
   const closeWarning = useRef<CloseWarning>({ active: false, lastAt: 0 })
+  // Evaluation (src/measure.ts): which frame triggered the last "stop", so its speech
+  // start can be timed from the frame; and a "log distance" sample being collected.
+  const lastWarningFrame = useRef<{ text: string; t0: number } | null>(null)
+  const depthSampling = useRef<ZoneDepths[] | null>(null)
+  // Depth-first frames (onFrame): the safety half of the current frame, completed by
+  // publishDetections; and the last detection result, for naming a "Stop" while
+  // detection is skipped inside the warning bands.
+  const pendingFrame = useRef<{
+    t0: number
+    depthMs: number
+    depthZones: ZoneDepths | null
+    depthError: string | null
+    publishedAt: number
+    hapticAt: number | null
+  } | null>(null)
+  const lastDetections = useRef<{ candidates: Candidate[]; at: number } | null>(null)
+  const [measuring, setMeasuring] = useState(false)
 
   const detection = useObjectDetection({ model: models.object_detection.yolo26n() })
   const { runOnFrame, isReady, downloadProgress, error } = detection
-  // Depth drives haptics whenever it loads and stays healthy; see `publish` below.
+  // Depth drives haptics whenever it loads and stays healthy; see `publishSafety` below.
   const depth = useDepth()
   const depthRun = depth.runOnFrame
   const [depthStats, setDepthStats] = useState<DepthStats | null>(null)
@@ -129,7 +177,7 @@ export default function App() {
       }
     }
   }
-  // `publish` has no deps (it runs per frame from the worklet), so it reaches the latest
+  // The publish callbacks have no deps (they run per frame from the worklet), so naming reaches the latest
   // closure through a ref rather than a stale one.
   const nameAheadRef = useRef(nameAheadNow)
   nameAheadRef.current = nameAheadNow
@@ -244,23 +292,66 @@ export default function App() {
     [withStill, clip],
   )
 
+  /**
+   * "Where am I". `truth` is only given by "check place …" during the evaluation: the
+   * place the tester knows they are at (null: a place that was never saved). Every
+   * query is logged with all its candidates so the threshold can be chosen from data.
+   */
   const whereNow = useCallback(
-    () =>
+    (truth?: string | null) =>
       withStill(
         'locating',
         'Checking',
         async (uri) => {
           if (!clip.isReady) return 'Place memory is still loading. Try again in a moment.'
-          const { match, top } = await matchPlace(await clip.forward(uri))
+          const { match, top, candidates } = await matchPlace(await clip.forward(uri))
+          recordPlaceQuery({ at: Date.now(), truth, threshold: MATCH_THRESHOLD, candidates })
           // The top similarity even when it misses, so the threshold can be tuned.
           console.log('place match', JSON.stringify(top))
-          if (match != null) return `You're at ${match.label}.`
-          return top == null ? 'No places are saved yet.' : "I don't recognise this place."
+          // A tester also hears the score; a user never does.
+          const score = truth !== undefined && top != null ? ` Score ${top.similarity.toFixed(2)}.` : ''
+          if (match != null) return `You're at ${match.label}.${score}`
+          return top == null ? 'No places are saved yet.' : `I don't recognise this place.${score}`
         },
         'Could not check. Check the internet connection.',
       ),
     [withStill, clip],
   )
+
+  // Evaluation sessions (src/measure.ts). Spoken by a sighted tester, never by a user.
+  const startMeasurement = useCallback(() => {
+    startMeasuring()
+    observeSpeech((kind, text, calledAt, startedAt) => {
+      const w = lastWarningFrame.current
+      const isWarning = kind === 'alert' && w != null && w.text === text
+      recordSpeech({
+        kind: isWarning ? 'warning' : kind,
+        calledAt,
+        startedAt,
+        frameT0: isWarning && w != null ? w.t0 : null,
+      })
+    })
+    setMeasuring(true)
+    alert('Measuring. Say stop measuring when done.')
+  }, [])
+  const stopMeasurement = useCallback(() => {
+    observeSpeech(null)
+    const report = stopMeasuring()
+    setMeasuring(false)
+    const spoken = spokenSummary(report)
+    setLastResult(`measurement: ${spoken}`)
+    alert(spoken)
+  }, [])
+
+  useEffect(() => {
+    if (!(MEASURE_SECONDS > 0) || !isReady || !depth.isReady) return
+    startMeasurement()
+    const timer = setTimeout(stopMeasurement, MEASURE_SECONDS * 1000)
+    return () => {
+      clearTimeout(timer)
+      if (isMeasuring()) stopMeasurement()
+    }
+  }, [isReady, depth.isReady, startMeasurement, stopMeasurement])
 
   // Hold-and-speak: what was heard becomes one of the actions above.
   const runCommand = useCallback(
@@ -277,6 +368,16 @@ export default function App() {
           return void saveNow(cmd.label)
         case 'whereami':
           return void whereNow()
+        case 'checkPlace':
+          return void whereNow(cmd.truth)
+        case 'measureStart':
+          return startMeasurement()
+        case 'measureStop':
+          return isMeasuring() ? stopMeasurement() : alert('Not measuring.')
+        case 'logDistance':
+          if (!depth.isReady) return alert('Depth is not ready yet.')
+          depthSampling.current = []
+          return alert('Hold still.')
         case 'showLogs':
           setShowDebug(true)
           return alert('Logs shown.')
@@ -291,7 +392,7 @@ export default function App() {
           )
       }
     },
-    [describeNow, readNow, saveNow, whereNow],
+    [describeNow, readNow, saveNow, whereNow, startMeasurement, stopMeasurement, depth.isReady],
   )
   const voiceFailed = useCallback((why: string) => {
     setNarrationPaused(false)
@@ -325,78 +426,128 @@ export default function App() {
     }
   }, [isReady])
 
-  const publish = useCallback(
-    (
-      found: Detected[],
-      frameWidth: number,
-      frameHeight: number,
-      yoloMs: number,
-      depthMs: number,
-      depthZones: ZoneDepths | null,
-      depthError: string | null,
-    ) => {
-      // Ranking, cooldowns and proximity live in narrationPolicy — see docs/decisions.md.
-      const candidates = toCandidates(found, frameWidth, frameHeight, zoneMemory.current)
-      setLabels(candidates.map((c) => c.text))
+  /**
+   * The safety decision for one frame: vibration, naming what is ahead, spoken "Stop".
+   * Runs exactly once per frame — from `publishSafety` when depth is healthy, otherwise
+   * from `publishDetections` with the box heuristic — so `pulseFor` is never called
+   * twice for one frame. Returns when a vibration was dispatched, or null.
+   * Uses only refs, setters and module functions, so the [] callbacks below can hold it.
+   */
+  const decide = (thisPattern: PulsePattern, t0: number): number | null => {
+    // Haptics first, and unconditionally: this is the safety layer and must not wait
+    // on speech, on a name for the obstacle, or on anything off-device.
+    const fired = pulseFor(thisPattern)
+    const hapticAt = fired !== 'none' ? Date.now() : null
+    setPattern(fired)
 
-      // Haptics first, and unconditionally: this is the safety layer and must not wait
-      // on speech, on a name for the obstacle, or on anything off-device.
-      //
+    // Something within reach: find out what it is, in the background. Once per approach,
+    // not every 2 s: segmentation shares the CPU with depth, and running it continuously
+    // made 130 of 135 slow frames (>600 ms) on 2026-11-14 — exactly while the user is
+    // near something. Leaving the near bands re-arms it and forgets the old name.
+    const now = Date.now()
+    if (thisPattern === 'none' || thisPattern === 'far') {
+      lastNamingAt.current = 0
+      sceneName.current = null
+    } else if (
+      naming.current == null &&
+      busyRef.current == null &&
+      now - lastNamingAt.current > NAME_EVERY_MS
+    ) {
+      lastNamingAt.current = now
+      naming.current = nameAheadRef.current().finally(() => {
+        naming.current = null
+      })
+    }
+    const scene =
+      sceneName.current != null && now - sceneName.current.at < NAME_FRESH_MS ? sceneName.current.name : null
+
+    // Too close: say so, and what it is. Detection's name first (a person in front of
+    // a wall is a person), then the scene's. Detection is skipped inside the warning
+    // bands (shouldDetect), so its name is the last one seen, if recent. Interrupts
+    // narration and any read-out — this is the one message that must never wait.
+    const recent = lastDetections.current
+    const ahead =
+      recent != null && now - recent.at < DETECTION_FRESH_MS ? nearestInPath(recent.candidates) : null
+    const aheadName = ahead != null ? ahead.key.split('|')[0] : null
+    const warning = tooCloseWarning(thisPattern, aheadName ?? scene, closeWarning.current, now)
+    if (warning != null) {
+      lastWarningFrame.current = { text: warning, t0 }
+      alert(warning)
+      setLastWarning(warning)
+      console.log('warning', warning)
+    }
+    return hapticAt
+  }
+
+  // Depth's result for a frame, scheduled from the worklet BEFORE detection runs on it.
+  const publishSafety = useCallback(
+    (depthMs: number, depthZones: ZoneDepths | null, depthError: string | null, t0: number) => {
+      const publishedAt = Date.now()
+      let hapticAt: number | null = null
       // Depth decides when it is ready and healthy — PRD section 5: depth, not
-      // detection, must drive safety, a glass door has no COCO class. The bbox
-      // heuristic is the fallback for while depth is loading or throws, not the
-      // steady state, now that depth runs fast enough to keep up (docs/decisions.md
-      // 2026-09-27). Only one path calls `pulseFor` per frame — see its docstring for
-      // why calling it from both would double-buzz.
-      let thisPattern: PulsePattern
+      // detection, must drive safety, a glass door has no COCO class. Without it,
+      // publishDetections falls back to the box heuristic for this frame.
       if (depthZones != null) {
-        thisPattern = stablePatternForDepth(depthZones.centre, lastDepthPattern.current)
+        const thisPattern = stablePatternForDepth(depthZones.centre, lastDepthPattern.current)
         lastDepthPattern.current = thisPattern
         setProximityLabel(`${depthZones.centre.toFixed(1)} m (depth)`)
-      } else {
+        hapticAt = decide(thisPattern, t0)
+      }
+      pendingFrame.current = { t0, depthMs, depthZones, depthError, publishedAt, hapticAt }
+
+      const sampling = depthSampling.current
+      if (sampling != null && depthZones != null) {
+        sampling.push(depthZones)
+        if (sampling.length >= DEPTH_SAMPLE_FRAMES) {
+          depthSampling.current = null
+          const s = depthSample(nextSampleNumber(), Date.now(), sampling)
+          recordDepthSample(s)
+          setLastResult(`depth sample ${s.sample}: centre ${s.centreM.toFixed(2)} m`)
+          alert(`Sample ${s.sample}. ${s.centreM.toFixed(2)} metres ahead.`)
+        }
+      }
+    },
+    [],
+  )
+
+  // The end of a frame: detection's result (null when it was skipped), narration, and
+  // the box fallback when depth had nothing. Always runs after publishSafety for the
+  // same frame, since both are queued in order onto the JS thread.
+  const publishDetections = useCallback(
+    (found: Detected[] | null, frameWidth: number, frameHeight: number, yoloMs: number, t0: number) => {
+      const p = pendingFrame.current != null && pendingFrame.current.t0 === t0 ? pendingFrame.current : null
+      let publishedAt = p?.publishedAt ?? Date.now()
+      let hapticAt = p?.hapticAt ?? null
+
+      // Ranking, cooldowns and proximity live in narrationPolicy — see docs/decisions.md.
+      const candidates = found != null ? toCandidates(found, frameWidth, frameHeight, zoneMemory.current) : []
+      if (found != null) {
+        setLabels(candidates.map((c) => c.text))
+        lastDetections.current = { candidates, at: Date.now() }
+      }
+
+      if (p?.depthZones == null) {
+        // Fallback while depth is loading or throws, not the steady state.
         const path = nearestInPath(candidates)
-        thisPattern = path != null ? patternFor(path.proximity) : 'none'
         setProximityLabel(path != null ? `${path.proximity.toFixed(2)} (bbox)` : '0.00 (bbox)')
+        publishedAt = Date.now()
+        hapticAt = decide(path != null ? patternFor(path.proximity) : 'none', t0)
       }
-      setPattern(pulseFor(thisPattern))
 
-      // Something within reach: find out what it is, in the background, so the name is
-      // ready before the "stop" at 1 m. Never while an on-demand request owns the camera.
-      const now = Date.now()
-      if (
-        (thisPattern === 'near' || thisPattern === 'imminent') &&
-        naming.current == null &&
-        busyRef.current == null &&
-        now - lastNamingAt.current > NAME_EVERY_MS
-      ) {
-        lastNamingAt.current = now
-        naming.current = nameAheadRef.current().finally(() => {
-          naming.current = null
-        })
-      }
-      const scene =
-        sceneName.current != null && now - sceneName.current.at < NAME_FRESH_MS ? sceneName.current.name : null
-
-      // Too close: say so, and what it is. Detection's name first (a person in front of
-      // a wall is a person), then the scene's. Interrupts narration and any read-out —
-      // this is the one message that must never wait.
-      const ahead = nearestInPath(candidates)
-      const aheadName = ahead != null ? ahead.key.split('|')[0] : null
-      const warning = tooCloseWarning(thisPattern, aheadName ?? scene, closeWarning.current, now)
-      if (warning != null) {
-        alert(warning)
-        setLastWarning(warning)
-        console.log('warning', warning)
-      }
+      const depthMs = p?.depthMs ?? -1
+      setDepthStats({ yoloMs, depthMs, zones: p?.depthZones ?? null, error: p?.depthError ?? null })
+      // Evaluation (src/measure.ts): a no-op unless a session is running.
+      recordFrame({ t0, yoloMs, depthMs, publishedAt, hapticAt, centreM: p?.depthZones?.centre ?? null })
 
       // Doors and stairs are landmarks as well as obstacles: announce them like any
       // detected object, with the same cooldowns. Walls are everywhere, so not them.
+      const now = Date.now()
+      const scene =
+        sceneName.current != null && now - sceneName.current.at < NAME_FRESH_MS ? sceneName.current.name : null
       if (scene === 'door' || scene === 'stairs') {
         candidates.push({ key: `${scene}|ahead`, text: `${scene} ahead`, score: 1, zone: 'ahead', proximity: 0 })
       }
-      setDepthStats({ yoloMs, depthMs, zones: depthZones, error: depthError })
-
-      narrate(candidates)
+      if (found != null || candidates.length > 0) narrate(candidates)
     },
     [],
   )
@@ -412,14 +563,11 @@ export default function App() {
       }
       try {
         const t0 = Date.now()
-        const found = runOnFrame(frame, false, {
-          detectionThreshold: MIN_SCORE,
-          inputSize: INPUT_SIZE,
-        })
-        const yoloMs = Date.now() - t0
 
-        // Depth failure must never take detection or haptics down with it — publish
-        // still fires below, just with depthZones null so it falls back to bbox.
+        // Depth first, and its warning is sent before detection starts: no warning
+        // depends on detection, so it must not wait ~100-700 ms for it. Depth failure
+        // must never take detection or haptics down with it — the safety result is
+        // still published, with depthZones null, and detection's boxes take over.
         let depthMs = -1
         let depthZones: ZoneDepths | null = null
         let depthError: string | null = null
@@ -436,33 +584,43 @@ export default function App() {
             depthError = String(e)
           }
         }
+        scheduleOnRN(publishSafety, depthMs, depthZones, depthError, t0)
 
-        // Rebuild as plain objects — native host objects do not survive the hop to JS.
-        // The buffer is sensor-native landscape (e.g. 640x480) but ExecuTorch returns
-        // bboxes already rotated to portrait screen space (0-480 wide, 0-640 tall).
-        // Dividing by frame.width put the 'on your right' zone past every possible x,
-        // so right was never announced. The app is portrait-locked (app.json), so
-        // portrait width is the short side.
-        // ponytail: assumes portrait; derive from frame.orientation if we ever unlock
-        scheduleOnRN(
-          publish,
-          found.map((d) => ({
+        // Detection only when nothing is within the warning bands — see shouldDetect.
+        let yoloMs = -1
+        let found: Detected[] | null = null
+        if (shouldDetect(depthZones != null ? depthZones.centre : null)) {
+          const t1 = Date.now()
+          // Rebuild as plain objects — native host objects do not survive the hop to JS.
+          // The buffer is sensor-native landscape (e.g. 640x480) but ExecuTorch returns
+          // bboxes already rotated to portrait screen space (0-480 wide, 0-640 tall).
+          // Dividing by frame.width put the 'on your right' zone past every possible x,
+          // so right was never announced. The app is portrait-locked (app.json), so
+          // portrait width is the short side.
+          // ponytail: assumes portrait; derive from frame.orientation if we ever unlock
+          found = runOnFrame(frame, false, {
+            detectionThreshold: MIN_SCORE,
+            inputSize: INPUT_SIZE,
+          }).map((d) => ({
             label: String(d.label),
             bbox: { x1: d.bbox.x1, y1: d.bbox.y1, x2: d.bbox.x2, y2: d.bbox.y2 },
-          })),
+          }))
+          yoloMs = Date.now() - t1
+        }
+        scheduleOnRN(
+          publishDetections,
+          found,
           Math.min(frame.width, frame.height),
           Math.max(frame.width, frame.height),
           yoloMs,
-          depthMs,
-          depthZones,
-          depthError,
+          t0,
         )
       } finally {
         // Not disposing stalls the camera pipeline.
         frame.dispose()
       }
     },
-    [runOnFrame, publish, depthRun],
+    [runOnFrame, publishSafety, publishDetections, depthRun],
   )
 
   const onFrameDropped = useCallback(() => setDropped((n) => n + 1), [])
@@ -554,6 +712,7 @@ export default function App() {
           {isReady ? `detecting · ${TARGET_FPS} fps` : `downloading model · ${Math.round(downloadProgress * 100)}%`}
         </Text>
         <Text style={styles.detail}>dropped frames: {dropped}</Text>
+        {measuring && <Text style={styles.warning}>measuring · say "stop measuring" to finish</Text>}
         <Text style={styles.detail}>
           path proximity: {proximityLabel} · haptic: {pattern}
         </Text>

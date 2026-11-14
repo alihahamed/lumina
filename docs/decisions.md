@@ -7,6 +7,57 @@ everything decided after that. Record what was **rejected**, not just what was c
 
 ---
 
+## 2026-11-14 — Depth before detection, and naming once per approach
+
+**Status: runs on the phone (2026-11-14): YOLO loads, and with something 1.3 m ahead the
+overlay shows `yolo -1 ms` (skipped) and depth driving the haptic. Not yet measured or
+walk-tested** — `docs/test-checklist.md` "Depth-first frame loop". (An earlier launch
+that never got going was the phone locking, not this change.)
+
+**Why.** The paper's reviewer (second review, comment 2) showed that at the measured
+per-frame time the 1.0 m "Stop" can arrive after the user reaches the obstacle. Every
+warning was waiting for YOLO: `onFrame` ran YOLO, then depth, then published both — yet
+no warning depends on detection.
+
+**Measured first (2026-11-14, dev build, 6 min session, 710 frames after warm-up,
+battery 10-11% and charging — a pilot, not paper numbers).** Median T 308 ms, but p95
+1056 ms. The tail is **not thermal**: CPU 84-91 °C, the thermal framework never
+throttled, median T flat across temperature (Spearman 0.02). It is **SegFormer**: frames
+overlapping a scene-naming run had p95 1159 ms; all other frames p95 **347 ms**; 130 of
+135 frames over 600 ms overlapped one. Naming ran every 2 s whenever something was near,
+i.e. about half the session, and exactly when the warning matters. SegFormer arrived on
+2026-09-27, after the September latency readings, which fits the paper's
+"September fast, November slow" puzzle. Logs and the analysis script:
+`~/Downloads/Lumina_Revision_2/measurements-2026-11-14/` (outside the repo).
+
+**What changed.**
+- `onFrame` runs depth first and schedules `publishSafety` (vibration, "Stop") before
+  YOLO starts; YOLO's result goes to `publishDetections`. One `decide()` helper runs the
+  safety decision exactly once per frame, from whichever half has the distance.
+- `shouldDetect` (`narrationPolicy.ts`): YOLO is skipped while the centre is within
+  `DETECT_SKIP_WITHIN_M` = 2.5 m, so the gap between distance updates is depth alone.
+- "Stop" names the obstacle from the last detection (≤ 3 s old) or SegFormer.
+- Naming (`NAME_EVERY_MS`) 2 s → once on entering the near bands, then every 10 s;
+  leaving the bands re-arms it and forgets the name (`NAME_FRESH_MS` 3 → 10 s).
+
+**Rejected.**
+- *YOLO on alternate frames.* Halves the mean gap but not the worst one: a crossing just
+  after a detection frame still waits detection + depth. The reviewer asked for worst case.
+- *Skip only inside the 1.6 m band.* At the slowest measured frame a walker covers ~1.2 m
+  between updates, so cadence must be fast before 1.0 m — the outer band is the smallest
+  that holds.
+- *Raise "Stop" to ~2.8 m.* Fires at most walls; already rejected in the paper.
+- *Second frame output to run YOLO in parallel.* Both models use XNNPACK on the same CPU
+  cores; the SegFormer data shows parallel inference slows depth, which is the opposite of
+  the goal.
+
+**Cost, and what would change our mind.** While anything is within 2.5 m ahead, nothing
+new is named or narrated — indoors that may be often. If users miss "chair on your left"
+near walls, try running YOLO once every N frames inside the band and measure the p95 gap,
+or shrink the band once T is reliably under ~0.4 s.
+
+---
+
 ## 2026-09-27 — Spoken "stop", thresholds from latency, and naming walls/doors/stairs
 
 **The too-close warning is spoken now, not only felt** (`tooCloseWarning`,
