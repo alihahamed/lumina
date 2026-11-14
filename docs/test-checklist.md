@@ -81,6 +81,12 @@ Do this in pairs. One blindfolded holding the phone, one spotting.
 Built, **entirely unverified on device**. The `path proximity` readout in the debug
 overlay exists so you can check the heuristic against reality — watch it while you walk.
 
+### Depth works before YOLO (2026-10-22 fix, `docs/bug.md`)
+- [ ] Clear app data, launch on mobile data or slow Wi-Fi: while the overlay still says
+      `downloading model`, walking at a wall buzzes and says "Stop"
+- [ ] Break YOLO on purpose (bad Wi-Fi, kill mid-download): it **says** that object names
+      did not load, and the wall still buzzes
+
 ### Does the signal mean anything
 - [ ] Walk toward a chair: `path proximity` rises smoothly toward 1.0
 - [ ] Back away: it falls again
@@ -201,11 +207,28 @@ then let go.
 - [ ] TalkBack: double-tap-and-hold, speak, the command runs
 - [ ] No internet: save and where-am-I fail with a spoken reason, no crash
 - [ ] Airplane mode: does voice recognition still work? (Android 11 offline pack)
+- [ ] Airplane mode on Android 13+: "what's around me" is heard (on-device recogniser,
+      2026-10-22) and reaches the offline describer
+- [ ] Tap a page of text, then hold and say "stop": the read-out ends, nothing else is said
 
 ## Phase 6+ — guidance between places
 
-Not built. Needs ARCore VIO on a phone where it works. Each gets its own section here before it is called
-done, and every one of them needs the failure cases and the blindfold test.
+Built 2026-11-12 from steps, turns and views (`docs/feature.md`), no ARCore. Watch
+`adb logcat -s ReactNativeJS | grep route` while walking.
+
+- [ ] Recording: 20 counted steps read as 18–22 in the overlay's `route:` line
+- [ ] Standing still, and waving the phone about, add no steps
+- [ ] A left turn says "left turn", a right turn "right turn" (if swapped, flip the sign
+      in `yawRate`)
+- [ ] Looking left and right with the phone while walking straight is **not** a turn
+- [ ] "end route" says the step and turn counts, and they match what was walked
+- [ ] "take me to …" from the same start gives the same legs, and arrives within ~3 steps
+- [ ] The `route view` similarities on the route (should be near or over 0.9) and one
+      corridor over (should be well under). This decides the two thresholds
+- [ ] Wrong turn on purpose: told at once, and "back on the route" after undoing it
+- [ ] Airplane mode: record and follow both still work
+- [ ] Killed and relaunched: the route is still there
+- [ ] Blindfolded, with a spotter
 
 **Never test with a real blind user without a sighted spotter present.**
 

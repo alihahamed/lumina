@@ -1,4 +1,5 @@
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition'
+import { useNetworkState } from 'expo-network'
 import { useCallback, useRef, useState } from 'react'
 
 /**
@@ -11,6 +12,7 @@ export function useVoiceCommand(onHeard: (heard: string) => void, onFailed: (why
   const [listening, setListening] = useState(false)
   const heard = useRef('')
   const failed = useRef<string | null>(null)
+  const network = useNetworkState()
 
   useSpeechRecognitionEvent('start', () => setListening(true))
   useSpeechRecognitionEvent('result', (e) => {
@@ -35,19 +37,30 @@ export function useVoiceCommand(onHeard: (heard: string) => void, onFailed: (why
   })
 
   const start = useCallback(async () => {
-    const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync()
-    if (!perm.granted) {
-      onFailed('Lumina needs the microphone to hear commands.')
-      return
+    // A throw here means no 'end' event, and the caller's narration pause never lifts.
+    try {
+      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync()
+      if (!perm.granted) {
+        onFailed('Lumina needs the microphone to hear commands.')
+        return
+      }
+      ExpoSpeechRecognitionModule.start({
+        lang: 'en-US',
+        interimResults: false,
+        continuous: false,
+        // Offline, the network recogniser fails, and voice is the only way to reach the
+        // Phase 7 offline describer. On-device needs Android 13+ and the English pack.
+        // ponytail: unverified on device; docs/test-checklist.md
+        requiresOnDeviceRecognition:
+          network.isInternetReachable === false && ExpoSpeechRecognitionModule.supportsOnDeviceRecognition(),
+        // Google's advice for short commands: the web_search model, not free_form.
+        androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'web_search' },
+      })
+    } catch (e) {
+      console.warn('speech start failed', e)
+      onFailed('Could not listen. Try again.')
     }
-    ExpoSpeechRecognitionModule.start({
-      lang: 'en-US',
-      interimResults: false,
-      continuous: false,
-      // Google's advice for short commands: the web_search model, not free_form.
-      androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'web_search' },
-    })
-  }, [onFailed])
+  }, [onFailed, network.isInternetReachable])
 
   const stop = useCallback(() => ExpoSpeechRecognitionModule.stop(), [])
 

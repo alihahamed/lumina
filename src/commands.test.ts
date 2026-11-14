@@ -19,6 +19,22 @@ for (const s of ['Where am I?', 'where is this', 'What place is this'])
 // --- read
 for (const s of ['read', 'Read this', 'read the sign']) assert.equal(kind(s), 'read', s)
 
+// --- silence
+for (const s of ['Stop.', 'be quiet', 'stop talking', 'Lumina, stop']) assert.equal(kind(s), 'quiet', s)
+assert.equal(kind('stop the music'), 'unknown')
+
+// --- routes
+{
+  const c = (s: string) => parseCommand(s)
+  assert.deepEqual(c('Start route to the library'), { kind: 'routeStart', label: 'the library' })
+  assert.deepEqual(c('record a path to lab 2'), { kind: 'routeStart', label: 'lab 2' })
+  assert.deepEqual(c('Take me to the library.'), { kind: 'routeGo', label: 'the library' })
+  assert.deepEqual(c('guide me back to my desk'), { kind: 'routeGo', label: 'my desk' })
+  for (const s of ['end route', 'Stop the route', 'finish recording', 'cancel guidance']) assert.equal(kind(s), 'routeEnd', s)
+  // A place is still a place.
+  assert.equal(kind('save this as the route'), 'save')
+}
+
 // --- debug overlay toggle
 for (const s of ['show logs', 'Show the debug screen', 'turn on debug']) assert.equal(kind(s), 'showLogs', s)
 for (const s of ['hide logs', 'turn off the debug overlay', 'close logs']) assert.equal(kind(s), 'hideLogs', s)
